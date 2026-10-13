@@ -1,0 +1,6 @@
+{
+  "name": "SoniMix — AI Music Production & Audio Processing Studio",
+  "description": "Professional browser-based music production platform for AI mixing, mastering, stem separation, album cover design, and audio resampling.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
