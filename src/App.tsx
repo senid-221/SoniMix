@@ -22,6 +22,7 @@ import {
   AuthUser,
   authUserToProfile,
 } from './utils/authStore';
+import { audioEngine } from './audio/audioEngine';
 
 export default function App() {
   // Determine initial tab from URL (/admin/login or /admin)
@@ -46,6 +47,22 @@ export default function App() {
   const [appConfig, setAppConfig] = useState<AppConfig>(DEFAULT_APP_CONFIG);
   const [userProfile, setUserProfile] = useState<UserProfile>(DEFAULT_USER_PROFILE);
   const [directoryUsers, setDirectoryUsers] = useState<DirectoryUser[]>([]);
+
+  useEffect(() => {
+    const getMediaElements = () => document.querySelectorAll<HTMLMediaElement>('audio, video');
+    const pauseCompetingPlayers = (event: Event) => {
+      const activeMedia = event.target instanceof HTMLMediaElement ? event.target : null;
+      getMediaElements().forEach((media) => { if (media !== activeMedia) media.pause(); });
+      audioEngine.pause();
+    };
+    const pauseMediaForMixer = () => getMediaElements().forEach((media) => media.pause());
+    document.addEventListener('play', pauseCompetingPlayers, true);
+    window.addEventListener('sonimix:audio-engine-play', pauseMediaForMixer);
+    return () => {
+      document.removeEventListener('play', pauseCompetingPlayers, true);
+      window.removeEventListener('sonimix:audio-engine-play', pauseMediaForMixer);
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;

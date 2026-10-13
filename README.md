@@ -15,7 +15,9 @@ The database and files live under `SONIMIX_DATA_DIR` (default `./data`). Do not 
 
 ## Accounts and administration
 
-Users register and sign in through server-validated email/password endpoints. Passwords are scrypt-hashed; sessions use random HttpOnly, SameSite cookies. The first admin is bootstrapped from `ADMIN_EMAIL` and `ADMIN_PASSWORD` (minimum 14 characters). Admin pages require the administrator role. Projects, jobs, preferences, uploads, exports, and branding settings persist in SQLite.
+Users register and sign in through server-validated email/password endpoints or optional Google OpenID Connect. Google sign-in validates OAuth state, exchanges the authorization code server-side, requires a verified email, and stores the stable Google subject on the existing user record. Passwords are scrypt-hashed; sessions use random HttpOnly cookies. The admin is bootstrapped from `ADMIN_EMAIL` and `ADMIN_PASSWORD` (minimum 14 characters). At startup, that account is granted the admin role, reactivated, and its password is synchronized from the server environment. Admin middleware protects administrative routes; administrators can manage users and jobs and access account-owned files. Users, sessions, projects, jobs, preferences, files, exports, and app settings persist in SQLite on a persistent single-node server.
+
+To enable Google sign-in, create an OAuth client of type **Web application** in Google Cloud Console. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` on the server. Add the exact redirect URI (for local development, `http://localhost:3000/api/auth/google/callback`; for production, `https://YOUR_DOMAIN/api/auth/google/callback`) to the OAuth client. Google sign-in is hidden until all three settings are present. Google documents the code flow, exact redirect URI matching, `state` validation, and verified-email claims in its [web server OAuth guide](https://developers.google.com/identity/protocols/oauth2/web-server) and [OpenID Connect docs](https://developers.google.com/identity/openid-connect/openid-connect).
 
 ## Server API
 
@@ -43,4 +45,4 @@ Core audio processing does not require an external API key; it requires the conf
 
 ## Deployment boundaries
 
-The current SQLite database and in-process worker queue target a single-node deployment; SQLite/file storage is not horizontally scalable, and running jobs are failed on restart rather than falsely resumed. Use a durable queue, shared database/object storage, HTTPS, backups, and production monitoring before multi-node or public production deployment. xAI, ElevenLabs, Loudly, FFmpeg, and Demucs behavior must be verified using the deployment’s real credentials and installed engines.
+The current SQLite database and in-process worker queue target a persistent single-node deployment; SQLite/local files are not durable across Vercel serverless instances, and running jobs are failed on restart rather than falsely resumed. Use a persistent database, object storage, and durable queue before deploying to Vercel or multiple nodes. xAI, ElevenLabs, Loudly, FFmpeg, and Demucs behavior must be verified using the deployment’s real credentials and installed engines.

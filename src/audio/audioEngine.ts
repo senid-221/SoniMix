@@ -152,6 +152,7 @@ export class AudioEngine {
     this.pauseOffset = Math.max(0, Math.min(this.duration, seekTime));
     this.startTime = this.ctx.currentTime;
     this.isPlaying = true;
+    window.dispatchEvent(new Event('sonimix:audio-engine-play'));
 
     // Check if any track is soloed
     const hasSolo = this.tracks.some((t) => t.solo);

@@ -1,7 +1,7 @@
 import express, { NextFunction, Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import dotenv from 'dotenv';
 import { analyze, master, resample, separate } from './server/audio-worker.js';
@@ -36,14 +36,36 @@ function cookieToken(request: Request) {
   return session ? decodeURIComponent(session.slice(SESSION_COOKIE.length + 1)) : undefined;
 }
 
+function cookieValue(request: Request, name: string) {
+  const prefix = `${name}=`;
+  const cookie = request.headers.cookie?.split(';').map((entry) => entry.trim()).find((entry) => entry.startsWith(prefix));
+  return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : undefined;
+}
+
+function appendSetCookie(response: Response, cookie: string) {
+  const current = response.getHeader('Set-Cookie');
+  const cookies = Array.isArray(current) ? current : typeof current === 'string' ? [current] : [];
+  response.setHeader('Set-Cookie', [...cookies, cookie]);
+}
+
 function setSessionCookie(response: Response, token: string) {
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  response.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MAX_AGE_SECONDS}${secure}`);
+  appendSetCookie(response, `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MAX_AGE_SECONDS}${secure}`);
 }
 
 function clearSessionCookie(response: Response) {
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  response.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`);
+  appendSetCookie(response, `${SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`);
+}
+
+function setGoogleStateCookie(response: Response, state: string) {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  appendSetCookie(response, `sonimix_google_state=${encodeURIComponent(state)}; HttpOnly; SameSite=Lax; Path=/api/auth/google; Max-Age=600${secure}`);
+}
+
+function clearGoogleStateCookie(response: Response) {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  appendSetCookie(response, `sonimix_google_state=; HttpOnly; SameSite=Lax; Path=/api/auth/google; Max-Age=0${secure}`);
 }
 
 function rateLimit(bucket: string, limit: number, windowMs: number) {
@@ -153,6 +175,47 @@ app.post('/api/auth/login', rateLimit('login', 10, 10 * 60 * 1000), async (reque
     const { user, token } = await db.login(stringValue(request.body?.email, 'Email'), stringValue(request.body?.password, 'Password'));
     setSessionCookie(response, token); response.json({ user });
   } catch (error) { response.status(401).json({ error: error instanceof Error ? error.message : 'Sign in failed' }); }
+});
+
+app.get('/api/auth/google/status', (_request, response) => response.json({ available: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REDIRECT_URI) }));
+app.get('/api/auth/google', rateLimit('google-auth', 20, 10 * 60 * 1000), (request, response) => {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+  if (!clientId || !process.env.GOOGLE_CLIENT_SECRET || !redirectUri) return response.status(503).send('Google sign-in is not configured on this server.');
+  const state = randomBytes(32).toString('base64url');
+  setGoogleStateCookie(response, state);
+  const authorization = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  authorization.search = new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri, response_type: 'code', scope: 'openid email profile', state, prompt: 'select_account' }).toString();
+  response.redirect(302, authorization.toString());
+});
+app.get('/api/auth/google/callback', rateLimit('google-callback', 30, 10 * 60 * 1000), async (request, response) => {
+  const receivedState = typeof request.query.state === 'string' ? request.query.state : '';
+  const expectedState = cookieValue(request, 'sonimix_google_state') || '';
+  clearGoogleStateCookie(response);
+  if (!receivedState || !expectedState || receivedState.length !== expectedState.length || !timingSafeEqual(Buffer.from(receivedState), Buffer.from(expectedState))) return response.status(400).send('Google sign-in could not be verified. Please try again.');
+  if (request.query.error || typeof request.query.code !== 'string') return response.status(400).send('Google sign-in was cancelled or denied.');
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+  if (!clientId || !clientSecret || !redirectUri) return response.status(503).send('Google sign-in is not configured on this server.');
+  try {
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, signal: AbortSignal.timeout(15_000),
+      body: new URLSearchParams({ code: request.query.code, client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri, grant_type: 'authorization_code' }),
+    });
+    if (!tokenResponse.ok) throw new Error('Google authorization code exchange failed');
+    const token = await tokenResponse.json() as { access_token?: string; token_type?: string };
+    if (!token.access_token || token.token_type?.toLowerCase() !== 'bearer') throw new Error('Google did not return a usable sign-in token');
+    const profileResponse = await fetch('https://openidconnect.googleapis.com/v1/userinfo', { headers: { authorization: `Bearer ${token.access_token}` }, signal: AbortSignal.timeout(15_000) });
+    if (!profileResponse.ok) throw new Error('Google profile verification failed');
+    const profile = await profileResponse.json() as { sub?: string; email?: string; email_verified?: boolean; name?: string };
+    if (!profile.sub || !profile.email || profile.email_verified !== true) throw new Error('A verified Google email is required');
+    const result = db.loginGoogle({ subject: profile.sub, email: profile.email, name: profile.name || profile.email.split('@')[0] });
+    setSessionCookie(response, result.token);
+    response.redirect(303, '/');
+  } catch (error) {
+    response.status(401).send(error instanceof Error ? error.message : 'Google sign-in failed. Please try again.');
+  }
 });
 
 app.post('/api/auth/admin/login', rateLimit('admin-login', 8, 10 * 60 * 1000), async (request, response) => {

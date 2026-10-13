@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ArrowRight, AudioLines, LoaderCircle, LockKeyhole, Mail, UserRound, X } from 'lucide-react';
 import { AuthUser } from '../../utils/authStore';
 import './auth.css';
@@ -28,6 +28,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [googleEnabled, setGoogleEnabled] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+    fetch('/api/auth/google/status').then((response) => response.json()).then((payload) => { if (active) setGoogleEnabled(payload.available === true); }).catch(() => { if (active) setGoogleEnabled(false); });
+    return () => { active = false; };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -65,6 +73,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
           <button type="button" role="tab" aria-selected={mode === 'login'} className={mode === 'login' ? 'active' : ''} onClick={() => { setMode('login'); setError(null); }}>Sign in</button>
           <button type="button" role="tab" aria-selected={mode === 'register'} className={mode === 'register' ? 'active' : ''} onClick={() => { setMode('register'); setError(null); }}>Create account</button>
         </div>
+        <button type="button" className="auth-google" disabled={!googleEnabled} onClick={() => window.location.assign('/api/auth/google')}><span aria-hidden="true">G</span> Continue with Google</button>
+        {!googleEnabled && <p className="auth-google-note">Google sign-in becomes available when configured by the server.</p>}
+        <div className="auth-divider"><span /> or use email <span /></div>
         <form className="auth-form" onSubmit={handleSubmit}>
           {mode === 'register' && <label className="auth-field"><span>Your name</span><span className="auth-input-wrap"><UserRound size={17} /><input autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Alex Morgan" required /></span></label>}
           <label className="auth-field"><span>Email address</span><span className="auth-input-wrap"><Mail size={17} /><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@studio.com" required /></span></label>

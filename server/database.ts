@@ -69,6 +69,9 @@ export class SoniMixDatabase {
       );
       CREATE TABLE IF NOT EXISTS app_settings (id INTEGER PRIMARY KEY CHECK(id = 1), config TEXT NOT NULL, updated_at INTEGER NOT NULL);
     `);
+    const googleColumns = this.db.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>;
+    if (!googleColumns.some((column) => column.name === 'google_sub')) this.db.exec('ALTER TABLE users ADD COLUMN google_sub TEXT');
+    this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_google_sub_idx ON users(google_sub) WHERE google_sub IS NOT NULL');
     const userColumns = this.db.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>;
     if (!userColumns.some((column) => column.name === 'status')) this.db.exec("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'");
     const fileColumns = this.db.prepare('PRAGMA table_info(files)').all() as Array<{ name: string }>;
@@ -90,7 +93,9 @@ export class SoniMixDatabase {
     if (password.length < 14) throw new Error('ADMIN_PASSWORD must be at least 14 characters');
     const existing = this.db.prepare('SELECT id FROM users WHERE email = ?').get(email) as { id: string } | undefined;
     if (existing) {
-      this.db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(existing.id);
+      const salt = randomBytes(16).toString('hex');
+      const hash = scryptSync(password, salt, 64).toString('hex');
+      this.db.prepare("UPDATE users SET role = 'admin', status = 'active', password_salt = ?, password_hash = ? WHERE id = ?").run(salt, hash, existing.id);
       return;
     }
     const salt = randomBytes(16).toString('hex');
@@ -143,6 +148,29 @@ export class SoniMixDatabase {
     if (!row || !timingSafeEqual(expected, actual)) throw new Error('Email or password is incorrect');
     const user: SessionUser = { id: row.id, name: row.name, email: row.email, role: row.role, createdAt: row.createdAt };
     return { user, token: this.createSession(user.id) };
+  }
+
+  loginGoogle(identity: { subject: string; email: string; name: string }) {
+    const email = identity.email.trim().toLowerCase();
+    const subject = identity.subject.trim();
+    const name = identity.name.trim().slice(0, 80) || email.split('@')[0];
+    if (!subject || subject.length > 255 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Google returned an invalid account identity');
+    let row = this.db.prepare("SELECT id, name, email, role, status, created_at AS createdAt, google_sub AS googleSub FROM users WHERE google_sub = ?").get(subject) as (SessionUser & { status: string; googleSub: string | null }) | undefined;
+    if (!row) {
+      row = this.db.prepare("SELECT id, name, email, role, status, created_at AS createdAt, google_sub AS googleSub FROM users WHERE email = ?").get(email) as (SessionUser & { status: string; googleSub: string | null }) | undefined;
+      if (row?.googleSub && row.googleSub !== subject) throw new Error('This account is linked to a different Google identity');
+      if (row) this.db.prepare('UPDATE users SET google_sub = ? WHERE id = ? AND google_sub IS NULL').run(subject, row.id);
+    }
+    if (!row) {
+      const user: SessionUser = { id: randomUUID(), name, email, role: 'user', createdAt: Date.now() };
+      const salt = randomBytes(16).toString('hex');
+      const randomPasswordHash = randomBytes(64).toString('hex');
+      this.db.prepare('INSERT INTO users (id, name, email, password_salt, password_hash, role, status, created_at, google_sub) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(user.id, user.name, user.email, salt, randomPasswordHash, user.role, 'active', user.createdAt, subject);
+      return { user, token: this.createSession(user.id) };
+    }
+    if (row.status !== 'active') throw new Error('This account is suspended');
+    return { user: { id: row.id, name: row.name, email: row.email, role: row.role, createdAt: row.createdAt }, token: this.createSession(row.id) };
   }
 
   getSession(token: string | undefined): SessionUser | null {

@@ -74,6 +74,13 @@
 .auth-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border: 1px solid #e6edf4; border-radius: 11px; background: #f5f8fb; }
 .auth-switch button { min-height: 38px; border: 0; border-radius: 8px; color: #718098; background: transparent; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: color 160ms, background 160ms, box-shadow 160ms; }
 .auth-switch button.active { color: #15345c; background: #fff; box-shadow: 0 1px 5px #1c3c6114; }
+.auth-google { display: flex; width: 100%; min-height: 44px; align-items: center; justify-content: center; gap: 10px; margin-top: 18px; border: 1px solid #dce5ef; border-radius: 10px; color: #263b57; background: #fff; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: background 160ms, border-color 160ms; }
+.auth-google:hover { border-color: #b9cadb; background: #f8fafc; }
+.auth-google:disabled { cursor: not-allowed; opacity: .58; }
+.auth-google span { color: #4285f4; font-size: 17px; font-weight: 800; }
+.auth-google-note { margin: 7px 0 0; color: #8493a7; text-align: center; font-size: 10px; }
+.auth-divider { display: flex; align-items: center; gap: 10px; margin-top: 16px; color: #8b9aad; font-size: 10px; }
+.auth-divider span { height: 1px; flex: 1; background: #e6edf4; }
 .auth-form { display: grid; gap: 16px; margin-top: 21px; }
 .auth-field { display: grid; gap: 7px; color: #314663; font-size: 11px; font-weight: 750; }
 .auth-input-wrap { display: flex; min-height: 46px; align-items: center; gap: 10px; padding: 0 13px; border: 1px solid #dce5ef; border-radius: 10px; color: #8494a9; background: #fff; transition: border-color 160ms, box-shadow 160ms, background 160ms; }
