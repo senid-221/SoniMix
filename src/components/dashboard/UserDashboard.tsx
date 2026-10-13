@@ -45,7 +45,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
 
   const storagePercentage = Math.min(
     100,
-    Math.round((profile.storageUsedMb / profile.storageLimitMb) * 100)
+    profile.storageLimitMb > 0 ? Math.min(100, Math.round((profile.storageUsedMb / profile.storageLimitMb) * 100)) : 0
   );
 
   return (
@@ -91,22 +91,19 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           {/* Storage Quota */}
           <div className="bg-slate-900 rounded-2xl border border-slate-800 p-5 space-y-3">
             <div className="flex items-center justify-between text-xs text-slate-400">
-              <span className="font-semibold">Cloud Audio Storage</span>
+              <span className="font-semibold">Stored files</span>
               <HardDrive className="w-4 h-4 text-blue-400" />
             </div>
             <div className="text-2xl font-black font-mono text-white">
-              {(profile.storageUsedMb / 1024).toFixed(2)} GB
-              <span className="text-xs text-slate-500 font-normal"> / {(profile.storageLimitMb / 1024).toFixed(1)} GB</span>
+              {(profile.storageUsedMb / 1024).toFixed(3)} GB
             </div>
-            <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800">
+            {profile.storageLimitMb > 0 && <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800">
               <div
                 className="bg-blue-500 h-full rounded-full transition-all"
                 style={{ width: `${storagePercentage}%` }}
               />
-            </div>
-            <span className="text-[10px] text-slate-500 block font-mono">
-              {storagePercentage}% used • 1.7 GB available
-            </span>
+            </div>}
+            <span className="text-[10px] text-slate-500 block font-mono">{profile.storageLimitMb > 0 ? `${storagePercentage}% of configured limit` : 'No account storage quota is configured'}</span>
           </div>
 
           {/* Bounces Completed */}

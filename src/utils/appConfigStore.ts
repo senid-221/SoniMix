@@ -1,23 +1,17 @@
 import { AppConfig, UserProfile, DirectoryUser } from '../types/dashboard';
 
-const STORAGE_KEY_CONFIG = 'sonimix_app_config_v1';
-const STORAGE_KEY_USER_PROFILE = 'sonimix_user_profile_v1';
-const STORAGE_KEY_DIRECTORY = 'sonimix_user_directory_v1';
-
 export const DEFAULT_APP_CONFIG: AppConfig = {
   customLogoUrl: null,
   customFaviconUrl: null,
   brandName: 'SoniMix',
   pageTitle: 'SoniMix — AI Music Production & Audio Processing Studio',
   heroHeadline: 'Your sound. Your vision. One studio.',
-  heroSubtitle:
-    'The all-in-one browser production suite for independent artists and producers. Real-time multitrack mixing, industry release mastering, source stem separation, 3000px album cover design, and true PCM audio resampling.',
+  heroSubtitle: 'A focused workspace for shaping audio, creating artwork, and managing your production projects.',
   sectionTitles: {
-    studiosHeadline: 'Engineered for real audio workflows. Not mockups.',
-    studiosSubtitle:
-      'Every studio module features actual Web Audio API signal processing, offline DSP rendering, and accurate technical exports.',
-    pricingHeadline: 'Clear quotas. Zero hidden charges.',
-    pricingSubtitle: 'Pick the right tier for your release schedule. No surprise bills.',
+    studiosHeadline: 'A connected workspace for your audio projects.',
+    studiosSubtitle: 'Use browser-based mixing and artwork tools alongside server processing when configured.',
+    pricingHeadline: 'Production tools, in one workspace.',
+    pricingSubtitle: 'Provider access and processing availability depend on server configuration.',
     faqHeadline: 'Frequently Asked Questions',
   },
   studioTitles: {
@@ -31,15 +25,15 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   maxUploadSizeMb: 200,
   freeMasteringQuota: 3,
   maintenanceMode: false,
-  announcementText: '🚀 SoniMix v2.4 Release: True 24-bit PCM Mastering & Real-time DSP is now live!',
+  announcementText: '',
 };
 
 export const DEFAULT_USER_PROFILE: UserProfile = {
-  id: 'usr-producer',
-  name: 'Artist Producer',
-  email: 'artist@sonimix.audio',
-  role: 'producer',
-  plan: 'Pro',
+  id: '',
+  name: '',
+  email: '',
+  role: 'user',
+  plan: 'Account',
   storageUsedMb: 0,
   storageLimitMb: 2048,
   totalBounces: 0,
@@ -57,66 +51,26 @@ export const INITIAL_DIRECTORY_USERS: DirectoryUser[] = [];
 
 export function getAppConfig(): AppConfig {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_CONFIG);
-    if (!raw) return DEFAULT_APP_CONFIG;
-    const parsed = JSON.parse(raw);
-    return {
-      ...DEFAULT_APP_CONFIG,
-      ...parsed,
-      studioTitles: {
-        ...DEFAULT_APP_CONFIG.studioTitles,
-        ...(parsed.studioTitles || {}),
-      },
-      sectionTitles: {
-        ...DEFAULT_APP_CONFIG.sectionTitles,
-        ...(parsed.sectionTitles || {}),
-      },
-    };
-  } catch {
     return DEFAULT_APP_CONFIG;
-  }
+  } catch { return DEFAULT_APP_CONFIG; }
 }
 
 export function saveAppConfig(config: AppConfig) {
-  try {
-    localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(config));
-  } catch {
-    // ignore
-  }
+  void config;
 }
 
 export function getUserProfile(): UserProfile {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_USER_PROFILE);
-    if (!raw) return DEFAULT_USER_PROFILE;
-    return { ...DEFAULT_USER_PROFILE, ...JSON.parse(raw) };
-  } catch {
-    return DEFAULT_USER_PROFILE;
-  }
+  return DEFAULT_USER_PROFILE;
 }
 
 export function saveUserProfile(profile: UserProfile) {
-  try {
-    localStorage.setItem(STORAGE_KEY_USER_PROFILE, JSON.stringify(profile));
-  } catch {
-    // ignore
-  }
+  void profile;
 }
 
 export function getDirectoryUsers(): DirectoryUser[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_DIRECTORY);
-    if (!raw) return INITIAL_DIRECTORY_USERS;
-    return JSON.parse(raw);
-  } catch {
-    return INITIAL_DIRECTORY_USERS;
-  }
+  return INITIAL_DIRECTORY_USERS;
 }
 
 export function saveDirectoryUsers(users: DirectoryUser[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY_DIRECTORY, JSON.stringify(users));
-  } catch {
-    // ignore
-  }
+  void users;
 }

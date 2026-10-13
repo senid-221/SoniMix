@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 
 interface CoverCreatorStudioProps {
-  onAddExport: (title: string, blob: Blob, format: string) => void;
+  onAddExport: (title: string, blob: Blob, format: string) => void | Promise<void>;
   studioTitle?: string;
 }
 
@@ -244,7 +244,7 @@ export const CoverCreatorStudio: React.FC<CoverCreatorStudioProps> = ({
       const ext = exportFormat === 'png' ? 'png' : 'jpg';
 
       exportCanvas.toBlob(
-        (blob) => {
+        async (blob) => {
           if (!blob) {
             setIsExporting(false);
             return;
@@ -252,15 +252,14 @@ export const CoverCreatorStudio: React.FC<CoverCreatorStudioProps> = ({
 
           const cleanHex = backgroundColor.replace('#', '');
           const filename = `Artwork_${cleanHex}_${exportRes}x${exportRes}.${ext}`;
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = filename;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-
-          onAddExport(filename, blob, `Artwork ${exportRes}×${exportRes} ${exportFormat.toUpperCase()}`);
+          try {
+            await onAddExport(filename, blob, `Artwork ${exportRes}×${exportRes} ${exportFormat.toUpperCase()}`);
+            const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
+          } catch (error) {
+            console.error('Artwork could not be saved:', error);
+            setIsExporting(false);
+            return;
+          }
           setExportSuccess(`Artwork exported cleanly at ${exportRes} × ${exportRes} px (${exportFormat.toUpperCase()})`);
           setTimeout(() => setExportSuccess(null), 4000);
           setIsExporting(false);

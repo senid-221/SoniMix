@@ -47,7 +47,7 @@ interface MixingStudioProps {
   tracks: AudioTrack[];
   setTracks: React.Dispatch<React.SetStateAction<AudioTrack[]>>;
   onMasteringRequest: (mixBuffer: AudioBuffer) => void;
-  onAddExport: (title: string, blob: Blob, format: string) => void;
+  onAddExport: (title: string, blob: Blob, format: string) => void | Promise<void>;
 }
 
 export const MixingStudio: React.FC<MixingStudioProps> = ({
@@ -432,7 +432,7 @@ export const MixingStudio: React.FC<MixingStudioProps> = ({
       const result = await audioEngine.renderOfflineMix(tracks, dummyMastering, 44100, bitDepth);
       const filename = `SoniMix_Bounce_${new Date().toISOString().slice(0, 10)}_${bitDepth}bit.wav`;
 
-      // Trigger browser download
+      await onAddExport(filename, result.wavBlob, `WAV ${bitDepth}-bit`);
       const url = URL.createObjectURL(result.wavBlob);
       const a = document.createElement('a');
       a.href = url;
@@ -441,7 +441,6 @@ export const MixingStudio: React.FC<MixingStudioProps> = ({
       a.click();
       document.body.removeChild(a);
 
-      onAddExport(filename, result.wavBlob, `WAV ${bitDepth}-bit`);
       setExportSuccess(true);
       setTimeout(() => setExportSuccess(false), 4000);
     } catch (err) {

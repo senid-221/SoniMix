@@ -1,5 +1,5 @@
 export type UserRole = 'user' | 'producer' | 'admin';
-export type PlanTier = 'Free' | 'Pro' | 'Studio';
+export type PlanTier = 'Free' | 'Pro' | 'Studio' | 'Account';
 
 export interface UserProfile {
   id: string;

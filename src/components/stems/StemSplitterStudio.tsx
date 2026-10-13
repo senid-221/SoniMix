@@ -22,11 +22,12 @@ import { AudioTrack } from '../../types/audio';
 import { audioBufferToWav, computeWaveformPeaks } from '../../utils/audioBufferUtils';
 import { WaveformCanvas } from '../waveform/WaveformCanvas';
 import { SpectrumVisualizer } from '../visualizer/SpectrumVisualizer';
+import { submitJob, uploadAsset, waitForJob } from '../../utils/apiClient';
 
 interface StemSplitterStudioProps {
   initialBuffer: AudioBuffer | null;
   onSendToMixer: (stems: AudioTrack[]) => void;
-  onAddExport: (title: string, blob: Blob, format: string) => void;
+  onAddExport: (title: string, blob: Blob, format: string) => void | Promise<void>;
 }
 
 export const StemSplitterStudio: React.FC<StemSplitterStudioProps> = ({
@@ -38,7 +39,6 @@ export const StemSplitterStudio: React.FC<StemSplitterStudioProps> = ({
   const [sourcePeaks, setSourcePeaks] = useState<number[]>([]);
   const [stems, setStems] = useState<AudioTrack[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [progress, setProgress] = useState(0);
   const [progressStep, setProgressStep] = useState('');
   const [processingError, setProcessingError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -65,10 +65,33 @@ export const StemSplitterStudio: React.FC<StemSplitterStudioProps> = ({
     }
   }, [initialBuffer]);
 
-  const runSeparation = async (_buffer: AudioBuffer) => {
-    setProgress(0);
-    setProgressStep('Server-side Demucs worker required');
-    setProcessingError('Stem separation is disabled until the authenticated SoniMix backend and Demucs worker are configured. No browser-side approximation is used.');
+  const runSeparation = async (buffer: AudioBuffer, source?: File) => {
+    setIsProcessing(true);
+    setProcessingError(null);
+    setProgressStep('Uploading source audio…');
+    try {
+      const inputBlob = source || audioBufferToWav(buffer, 24);
+      const { file } = await uploadAsset(inputBlob, source?.name || 'stem-source.wav');
+      setProgressStep('Demucs is separating the source…');
+      const submitted = await submitJob<{ id: string }>('separate_stems', file);
+      const job = await waitForJob<{ id: string; state: string; outputs: string[] }>(submitted.id);
+      if (job.outputs.length !== 4) throw new Error('The separation engine returned an incomplete stem set.');
+      const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const audioContext = new AudioCtxClass();
+      const labels = ['vocals', 'drums', 'bass', 'other'];
+      const colors = ['#a78bfa', '#34d399', '#fb923c', '#38bdf8'];
+      const decodedStems = await Promise.all(job.outputs.map(async (reference, index) => {
+        const response = await fetch(`/api/files/${reference.split('/').map(encodeURIComponent).join('/')}`, { credentials: 'include' });
+        if (!response.ok) throw new Error(`Stem download failed (${response.status}).`);
+        const audio = await audioContext.decodeAudioData(await response.arrayBuffer());
+        if (Math.abs(audio.duration - buffer.duration) > 0.1) throw new Error(`${labels[index]} stem is not aligned to the source.`);
+        return { id: `stem-${index}-${Date.now()}`, name: labels[index], type: labels[index] === 'other' ? 'melody' : labels[index], color: colors[index], buffer: audio, duration: audio.duration, volume: 1, pan: 0, mute: false, solo: false, peaks: computeWaveformPeaks(audio), effects: { eqLow: 0, eqMid: 0, eqHigh: 0, hpf: 20, lpf: 20000, compThreshold: -24, compRatio: 3, compAttack: 0.01, compRelease: 0.1, reverbWet: 0, delayWet: 0, delayTime: 0.25, saturation: 0 } } as AudioTrack;
+      }));
+      setStems(decodedStems);
+      setProgressStep('Four verified, aligned stems are ready.');
+    } catch (error) {
+      setProcessingError(error instanceof Error ? error.message : 'Stem separation failed.');
+    } finally { setIsProcessing(false); }
   };
 
   // Upload user audio
@@ -82,9 +105,9 @@ export const StemSplitterStudio: React.FC<StemSplitterStudioProps> = ({
       const decoded = await ctx.decodeAudioData(arr);
       setSourceBuffer(decoded);
       setSourcePeaks(computeWaveformPeaks(decoded));
-      runSeparation(decoded);
+      await runSeparation(decoded, file);
     } catch (err) {
-      console.error(err);
+      setProcessingError(err instanceof Error ? err.message : 'The audio file could not be decoded.');
     }
   };
 
@@ -226,20 +249,13 @@ export const StemSplitterStudio: React.FC<StemSplitterStudioProps> = ({
   };
 
   // Download single stem
-  const handleDownloadStem = (stem: AudioTrack) => {
+  const handleDownloadStem = async (stem: AudioTrack) => {
     if (!stem.buffer) return;
     const blob = audioBufferToWav(stem.buffer, 16);
     const filename = `SoniMix_Stem_${stem.name.replace(/\s+/g, '_')}.wav`;
 
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-
-    onAddExport(filename, blob, 'WAV Stem 16-bit');
+    await onAddExport(filename, blob, 'WAV Stem 16-bit');
+    const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename; anchor.click(); URL.revokeObjectURL(url);
   };
 
   // Download all stems as ZIP package
@@ -261,15 +277,8 @@ export const StemSplitterStudio: React.FC<StemSplitterStudioProps> = ({
       const zipBlob = await zip.generateAsync({ type: 'blob' });
       const filename = `SoniMix_Stems_Bundle_${Date.now()}.zip`;
 
-      const url = URL.createObjectURL(zipBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-
-      onAddExport(filename, zipBlob, 'ZIP Stem Package');
+      await onAddExport(filename, zipBlob, 'ZIP Stem Package');
+      const url = URL.createObjectURL(zipBlob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename; anchor.click(); URL.revokeObjectURL(url);
       setZipSuccess(true);
       setTimeout(() => setZipSuccess(false), 4000);
     } catch (err) {
@@ -380,16 +389,11 @@ export const StemSplitterStudio: React.FC<StemSplitterStudioProps> = ({
                   <Sparkles className="w-4 h-4 animate-spin" />
                   <span>{progressStep}</span>
                 </span>
-                <span className="font-mono text-slate-400">{progress}%</span>
               </div>
-              <div className="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden border border-slate-800">
-                <div
-                  className="bg-gradient-to-r from-blue-600 to-indigo-500 h-full rounded-full transition-all duration-300"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
+              <div className="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden border border-slate-800"><div className="h-full w-1/3 animate-pulse rounded-full bg-gradient-to-r from-blue-600 to-cyan-400" /></div>
             </div>
           )}
+          {!isProcessing && stems.length === 0 && <button onClick={() => sourceBuffer && void runSeparation(sourceBuffer)} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white">Separate stems</button>}
           {processingError && (
             <div className="bg-amber-950/40 border border-amber-500/40 rounded-2xl p-4 text-xs text-amber-200">
               {processingError}

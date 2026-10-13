@@ -20,10 +20,11 @@ import { DEFAULT_MASTERING_PRESETS } from '../../utils/projectStore';
 import { audioBufferToWav, computeWaveformPeaks, analyzeAudioMetrics } from '../../utils/audioBufferUtils';
 import { WaveformCanvas } from '../waveform/WaveformCanvas';
 import { SpectrumVisualizer } from '../visualizer/SpectrumVisualizer';
+import { apiRequest, submitJob, uploadAsset, waitForJob } from '../../utils/apiClient';
 
 interface MasteringStudioProps {
   inputBuffer: AudioBuffer | null;
-  onAddExport: (title: string, blob: Blob, format: string) => void;
+  onAddExport: (title: string, blob: Blob, format: string) => void | Promise<void>;
   onLoadAudioFile?: (buffer: AudioBuffer) => void;
 }
 
@@ -258,82 +259,49 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
 
   // AI Smart Mastering Suggestion
   const handleAIMasteringRecommendation = async () => {
-    if (!originalMetrics || !inputBuffer) return;
-    
-    // Intelligent heuristic audio engineering analysis:
-    const diffTo14 = -14 - originalMetrics.estimatedLufs;
-    const recommendedGain = Math.max(-2, Math.min(6, diffTo14 * 0.7));
-    const bassAdjustment = originalMetrics.rmsDbfs < -20 ? 2.5 : 1.0;
-    const dynamicDrive = originalMetrics.dynamicRange > 12 ? 0.5 : 0.25;
-
-    const aiSettings: MasteringSettings = {
-      targetLufs: -14,
-      ceiling: -0.2,
-      inputGain: Number(recommendedGain.toFixed(1)),
-      eqBass: bassAdjustment,
-      eqLowMid: -0.8,
-      eqPresence: 1.5,
-      eqAir: 2.0,
-      stereoWidth: 1.25,
-      compressionDrive: dynamicDrive,
-      warmTape: 0.35,
-      presetName: 'AI Adaptive Smart Master',
-    };
-
-    setSettings(aiSettings);
-    renderMaster(inputBuffer, aiSettings);
-
+    if (!inputBuffer) return;
+    setIsProcessing(true);
+    setAiReport(null);
     try {
-      const res = await fetch('/api/ai/mastering-insights', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          metrics: originalMetrics,
-          genre: 'Pop / Electronic Master',
-          targetLufs: -14,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.recommendation) {
-          setAiReport(data.recommendation);
-        }
-      }
-    } catch {
-      setAiReport({
-        style: 'Release Master',
-        lufsAdvice: `Current loudness is ${originalMetrics.estimatedLufs} LUFS. +${recommendedGain.toFixed(1)} dB input gain added to reach -14 LUFS standard.`,
-        eqSuggestions: [
-          `Sub foundation boosted by +${bassAdjustment} dB for club low-end punch.`,
-          'Cleaned boxy mid build-up at 320 Hz with -0.8 dB cut.',
-          'Added +2.0 dB high air shelf for transparent clarity.',
-        ],
-        dynamicsAdvice: 'True peak ceiling set to -0.2 dBFS to safeguard against lossy codec inter-sample clipping.',
-      });
+      const { file } = await uploadAsset(audioBufferToWav(inputBuffer, 24), 'master-source.wav');
+      const result = await apiRequest<{ explanation: string | null; jobs: Array<{ id: string }> }>('/api/ai/orchestrate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ instruction: `Analyze and master this uploaded audio file for a balanced streaming release near ${settings.targetLufs} LUFS. Source file reference: ${file}. Use the supported master_audio tool.` }) });
+      if (!result.jobs.length) throw new Error(result.explanation || 'Grok did not request a supported mastering job.');
+      const job = await waitForJob<{ id: string; state: string; outputs: string[]; message: string }>(result.jobs[0].id);
+      const fileResponse = await fetch(`/api/files/${job.outputs[0].split('/').map(encodeURIComponent).join('/')}`, { credentials: 'include' });
+      if (!fileResponse.ok) throw new Error('The verified mastered file could not be retrieved.');
+      const masteredBlob = await fileResponse.blob();
+      const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const decoded = await new AudioCtxClass().decodeAudioData(await masteredBlob.arrayBuffer());
+      setMasteredBuffer(decoded);
+      setMasteredPeaks(computeWaveformPeaks(decoded));
+      setMasteredMetrics(analyzeAudioMetrics(decoded));
+      setAiReport({ style: 'Grok-orchestrated server master', lufsAdvice: job.message, eqSuggestions: [], dynamicsAdvice: result.explanation || 'Processing was executed by the configured FFmpeg engine and the output passed server-side audio validation.' });
+    } catch (error) {
+      setAiReport({ style: 'Not completed', lufsAdvice: error instanceof Error ? error.message : 'AI mastering failed.', eqSuggestions: [], dynamicsAdvice: 'No mastering result is claimed.' });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   // Export Mastered File
-  const handleExport = () => {
-    if (!masteredBuffer) return;
+  const handleExport = async () => {
+    if (!inputBuffer) return;
     setIsExporting(true);
     try {
-      const blob = audioBufferToWav(masteredBuffer, bitDepth);
+      const { file } = await uploadAsset(audioBufferToWav(inputBuffer, 24), 'master-source.wav');
+      const queued = await submitJob<{ id: string }>('master_audio', file, { targetLufs: settings.targetLufs, profile: 'balanced', bitDepth, format: 'wav', dsp: settings });
+      const job = await waitForJob<{ id: string; state: string; outputs: string[]; message: string }>(queued.id);
+      const response = await fetch(`/api/files/${job.outputs[0].split('/').map(encodeURIComponent).join('/')}`, { credentials: 'include' });
+      if (!response.ok) throw new Error('The verified master could not be downloaded.');
+      const blob = await response.blob();
       const filename = `SoniMix_Master_${settings.targetLufs}LUFS_${bitDepth}bit.wav`;
-
+      await onAddExport(filename, blob, `Mastered WAV ${bitDepth}-bit`);
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-
-      onAddExport(filename, blob, `Mastered WAV ${bitDepth}-bit`);
+      const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename; anchor.click(); URL.revokeObjectURL(url);
       setExportSuccess(true);
       setTimeout(() => setExportSuccess(false), 4000);
     } catch (err) {
-      console.error(err);
+      setAiReport({ style: 'Export failed', lufsAdvice: err instanceof Error ? err.message : 'Master export failed.', eqSuggestions: [], dynamicsAdvice: 'No output was saved.' });
     } finally {
       setIsExporting(false);
     }

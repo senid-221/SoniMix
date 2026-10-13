@@ -11,25 +11,15 @@ import { UserDashboard } from './components/dashboard/UserDashboard';
 import { AdminDashboard } from './components/dashboard/AdminDashboard';
 import { AdminLoginPage } from './components/auth/AdminLoginPage';
 import { AuthModal } from './components/auth/AuthModal';
+import { VoiceStudio } from './components/providers/VoiceStudio';
+import { MusicGenerationStudio } from './components/providers/MusicGenerationStudio';
 import { AudioTrack, ExportHistoryItem } from './types/audio';
 import { AppConfig, UserProfile, DirectoryUser } from './types/dashboard';
 import { computeWaveformPeaks } from './utils/audioBufferUtils';
-import { addExportHistoryItem, getExportHistory } from './utils/projectStore';
-import {
-  getAppConfig,
-  saveAppConfig,
-  getUserProfile,
-  saveUserProfile,
-  getDirectoryUsers,
-  saveDirectoryUsers,
-  DEFAULT_USER_PROFILE,
-} from './utils/appConfigStore';
+import { apiRequest, saveExport } from './utils/apiClient';
+import { DEFAULT_APP_CONFIG, DEFAULT_USER_PROFILE } from './utils/appConfigStore';
 import {
   AuthUser,
-  getStoredAuthUser,
-  setStoredAuthUser,
-  getIsAdminAuthenticated,
-  setAdminAuthenticated,
   authUserToProfile,
 } from './utils/authStore';
 
@@ -38,9 +28,7 @@ export default function App() {
   const [currentTab, setCurrentTab] = useState<NavTab>(() => {
     const path = window.location.pathname;
     const hash = window.location.hash;
-    if (path === '/admin/login' || path === '/admin' || hash === '#/admin/login' || hash === '#/admin') {
-      return getIsAdminAuthenticated() ? 'admin-dashboard' : 'admin-login';
-    }
+    if (path === '/admin/login' || path === '/admin' || hash === '#/admin/login' || hash === '#/admin') return 'admin-login';
     return 'landing';
   });
 
@@ -49,19 +37,54 @@ export default function App() {
   const [exportHistory, setExportHistory] = useState<ExportHistoryItem[]>([]);
 
   // User and Admin Authentication State
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getStoredAuthUser());
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isSessionLoading, setIsSessionLoading] = useState(true);
+  const [operationError, setOperationError] = useState<string | null>(null);
 
   // App Configuration, User Profile, and User Directory State
-  const [appConfig, setAppConfig] = useState<AppConfig>(() => getAppConfig());
-  const [userProfile, setUserProfile] = useState<UserProfile>(() => {
-    const storedAuth = getStoredAuthUser();
-    if (storedAuth) {
-      return authUserToProfile(storedAuth);
-    }
-    return getUserProfile();
-  });
-  const [directoryUsers, setDirectoryUsers] = useState<DirectoryUser[]>(() => getDirectoryUsers());
+  const [appConfig, setAppConfig] = useState<AppConfig>(DEFAULT_APP_CONFIG);
+  const [userProfile, setUserProfile] = useState<UserProfile>(DEFAULT_USER_PROFILE);
+  const [directoryUsers, setDirectoryUsers] = useState<DirectoryUser[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    fetch('/api/auth/session', { credentials: 'include' })
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error('Session lookup failed')))
+      .then((payload) => {
+        if (!mounted) return;
+        const user = payload.user as AuthUser | null;
+        setCurrentUser(user);
+        if (user) setUserProfile(authUserToProfile(user));
+        if (user) apiRequest<{ profile: Record<string, unknown> }>('/api/profile').then(({ profile }) => setUserProfile((previous) => ({ ...previous, totalBounces: Number(profile.exportCount || 0), totalProjects: Number(profile.projectCount || 0), storageUsedMb: Number(profile.storageBytes || 0) / 1048576, preferences: { ...previous.preferences, ...(profile.preferences as UserProfile['preferences'] || {}) } }))).catch(() => undefined);
+        if ((window.location.pathname.startsWith('/admin') || window.location.hash.startsWith('#/admin')) && user?.role !== 'admin') {
+          setCurrentTab('admin-login');
+        } else if ((window.location.pathname.startsWith('/admin') || window.location.hash.startsWith('#/admin')) && user?.role === 'admin') {
+          setCurrentTab('admin-dashboard');
+        }
+      })
+      .catch(() => { if (mounted) setCurrentUser(null); })
+      .finally(() => { if (mounted) setIsSessionLoading(false); });
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    apiRequest<{ config: AppConfig }>('/api/app-config')
+      .then(({ config }) => setAppConfig({ ...DEFAULT_APP_CONFIG, ...config }))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (currentUser?.role !== 'admin') { setDirectoryUsers([]); return; }
+    fetch('/api/admin/overview', { credentials: 'include' })
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error('Admin data unavailable')))
+      .then((payload) => setDirectoryUsers((payload.users || []).map((user: Record<string, unknown>) => ({
+        id: String(user.id), name: String(user.name), email: String(user.email), role: String(user.role), plan: 'Account',
+        joinedDate: new Date(Number(user.createdAt)).toLocaleDateString(), storageUsedMb: Number(user.storageBytes || 0) / 1048576,
+        bouncesCount: Number(user.exports || 0), status: user.status === 'suspended' ? 'suspended' : 'active', lastActive: user.lastSeen ? new Date(Number(user.lastSeen)).toLocaleString() : 'No session',
+      })) as DirectoryUser[]))
+      .catch(() => setDirectoryUsers([]));
+  }, [currentUser]);
 
   // Listen for browser URL changes (e.g. user types /admin/login or clicks back)
   useEffect(() => {
@@ -69,11 +92,7 @@ export default function App() {
       const path = window.location.pathname;
       const hash = window.location.hash;
       if (path === '/admin/login' || path === '/admin' || hash === '#/admin/login' || hash === '#/admin') {
-        if (getIsAdminAuthenticated()) {
-          setCurrentTab('admin-dashboard');
-        } else {
-          setCurrentTab('admin-login');
-        }
+        setCurrentTab(currentUser?.role === 'admin' ? 'admin-dashboard' : 'admin-login');
       }
     };
 
@@ -83,12 +102,18 @@ export default function App() {
       window.removeEventListener('popstate', handleUrlRouting);
       window.removeEventListener('hashchange', handleUrlRouting);
     };
-  }, []);
+  }, [currentUser]);
 
-  // Load existing export history from localStorage
   useEffect(() => {
-    setExportHistory(getExportHistory());
-  }, []);
+    if (!currentUser) { setExportHistory([]); return; }
+    apiRequest<{ exports: Array<{ id: string; title: string; format: string; fileSize: number; timestamp: number; filePath: string }> }>('/api/exports')
+      .then(({ exports }) => setExportHistory(exports.map((item) => ({
+        id: item.id, title: item.title,
+        type: item.title.toLowerCase().includes('cover') || item.format.toLowerCase().includes('artwork') ? 'cover' : item.title.toLowerCase().includes('stem') ? 'stem' : item.title.toLowerCase().includes('master') ? 'master' : 'mix',
+        format: item.format, fileSize: `${(item.fileSize / 1048576).toFixed(1)} MB`, timestamp: item.timestamp, downloadUrl: `/api/files/${item.filePath}`,
+      })) as ExportHistoryItem[]))
+      .catch((error) => setOperationError(error instanceof Error ? error.message : 'Exports could not be loaded.'));
+  }, [currentUser]);
 
   // Dynamically update document title and favicon when appConfig changes
   useEffect(() => {
@@ -110,7 +135,8 @@ export default function App() {
   const handleUpdateAppConfig: React.Dispatch<React.SetStateAction<AppConfig>> = (action) => {
     setAppConfig((prev) => {
       const updated = typeof action === 'function' ? action(prev) : action;
-      saveAppConfig(updated);
+      void apiRequest('/api/admin/app-config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) })
+        .catch((error) => setOperationError(error instanceof Error ? error.message : 'Settings could not be saved.'));
       return updated;
     });
   };
@@ -118,29 +144,40 @@ export default function App() {
   const handleUpdateUserProfile: React.Dispatch<React.SetStateAction<UserProfile>> = (action) => {
     setUserProfile((prev) => {
       const updated = typeof action === 'function' ? action(prev) : action;
-      saveUserProfile(updated);
+      void apiRequest('/api/profile', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ preferences: updated.preferences }) })
+        .catch((error) => setOperationError(error instanceof Error ? error.message : 'Preferences could not be saved.'));
       return updated;
     });
   };
 
   const handleUpdateDirectoryUsers: React.Dispatch<React.SetStateAction<DirectoryUser[]>> = (action) => {
-    setDirectoryUsers((prev) => {
-      const updated = typeof action === 'function' ? action(prev) : action;
-      saveDirectoryUsers(updated);
+    setDirectoryUsers((previous) => {
+      const updated = typeof action === 'function' ? action(previous) : action;
+      const changed = updated.find((user) => {
+        const before = previous.find((candidate) => candidate.id === user.id);
+        return before && (before.status !== user.status || before.role !== user.role);
+      });
+      if (changed) {
+        void apiRequest('/api/admin/users/' + encodeURIComponent(changed.id), {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: changed.status, role: changed.role }),
+        }).catch((error) => setOperationError(error instanceof Error ? error.message : 'Account update failed.'));
+      }
       return updated;
     });
   };
 
   // Tab Selection with Route Synchronization
   const handleSelectTab = (tab: NavTab) => {
+    const protectedTabs: NavTab[] = ['mixer', 'mastering', 'stems', 'cover', 'resampler', 'projects', 'user-dashboard', 'voice', 'music'];
+    if (protectedTabs.includes(tab) && !currentUser) { setIsAuthModalOpen(true); return; }
     if (tab === 'admin-dashboard') {
-      if (getIsAdminAuthenticated()) {
+      if (currentUser?.role === 'admin') {
         setCurrentTab('admin-dashboard');
-        window.history.pushState(null, '', '/admin/login');
       } else {
         setCurrentTab('admin-login');
-        window.history.pushState(null, '', '/admin/login');
       }
+      window.history.pushState(null, '', '/admin/login');
       return;
     }
 
@@ -155,28 +192,30 @@ export default function App() {
     setCurrentUser(user);
     const profile = authUserToProfile(user);
     setUserProfile(profile);
-    saveUserProfile(profile);
-    setDirectoryUsers(getDirectoryUsers());
   };
 
-  const handleLogout = () => {
-    setStoredAuthUser(null);
+  const handleLogout = async () => {
+    try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }); }
+    catch { setOperationError('The session could not be cleared. Please reload and sign in again.'); }
     setCurrentUser(null);
     setUserProfile(DEFAULT_USER_PROFILE);
-    saveUserProfile(DEFAULT_USER_PROFILE);
-    if (currentTab === 'user-dashboard') {
+    if (currentTab !== 'landing') {
       setCurrentTab('landing');
+      window.history.pushState(null, '', '/');
     }
   };
 
-  const handleAdminLoginSuccess = () => {
-    setAdminAuthenticated(true);
+  const handleAdminLoginSuccess = async () => {
+    const response = await fetch('/api/auth/session', { credentials: 'include' });
+    const payload = await response.json();
+    if (!response.ok || payload.user?.role !== 'admin') throw new Error('Administrator session was not established.');
+    setCurrentUser(payload.user);
+    setUserProfile(authUserToProfile(payload.user));
     setCurrentTab('admin-dashboard');
     window.history.pushState(null, '', '/admin/login');
   };
 
   const handleExitAdmin = () => {
-    setAdminAuthenticated(false);
     setCurrentTab('landing');
     window.history.pushState(null, '', '/');
   };
@@ -239,37 +278,23 @@ export default function App() {
     setCurrentTab('mastering');
   };
 
-  const handleAddExport = (title: string, blob: Blob, format: string) => {
-    const item: ExportHistoryItem = {
-      id: `export-${Date.now()}`,
-      title,
-      type: title.includes('Master') ? 'master' : title.includes('Stem') ? 'stem' : 'mix',
-      format,
-      fileSize: `${(blob.size / (1024 * 1024)).toFixed(1)} MB`,
-      timestamp: Date.now(),
-      downloadUrl: URL.createObjectURL(blob),
-      blob,
-    };
-    addExportHistoryItem(item);
-    setExportHistory((prev) => [item, ...prev]);
-
-    // Update user profile stats
-    setUserProfile((prev) => {
-      const updated = {
-        ...prev,
-        totalBounces: prev.totalBounces + 1,
-        storageUsedMb: Math.min(
-          prev.storageLimitMb,
-          prev.storageUsedMb + Math.round(blob.size / (1024 * 1024))
-        ),
+  const handleAddExport = async (title: string, blob: Blob, format: string) => {
+    try {
+      const saved = await saveExport(blob, title, format);
+      const item: ExportHistoryItem = {
+        id: saved.id, title, type: title.toLowerCase().includes('cover') ? 'cover' : title.toLowerCase().includes('stem') ? 'stem' : title.toLowerCase().includes('master') ? 'master' : 'mix',
+        format, fileSize: `${(blob.size / 1048576).toFixed(1)} MB`, timestamp: Date.now(), downloadUrl: saved.downloadUrl,
       };
-      saveUserProfile(updated);
-      return updated;
-    });
+      setExportHistory((previous) => [item, ...previous]);
+      setUserProfile((previous) => ({ ...previous, totalBounces: previous.totalBounces + 1 }));
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : 'Export could not be saved.');
+      throw error;
+    }
   };
 
   // Dedicated Admin Login Page at /admin/login
-  if (currentTab === 'admin-login') {
+  if (currentTab === 'admin-login' && !isSessionLoading) {
     return (
       <AdminLoginPage
         onLoginSuccess={handleAdminLoginSuccess}
@@ -279,6 +304,8 @@ export default function App() {
       />
     );
   }
+
+  if (isSessionLoading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-600" aria-live="polite">Loading your secure workspace…</div>;
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 font-sans">
@@ -334,6 +361,9 @@ export default function App() {
           />
         )}
 
+        {currentTab === 'voice' && <VoiceStudio onSaved={handleAddExport} />}
+        {currentTab === 'music' && <MusicGenerationStudio />}
+
         {currentTab === 'resampler' && (
           <ResamplerStudio
             inputBuffer={masterMixBuffer}
@@ -369,16 +399,10 @@ export default function App() {
           />
         )}
 
-        {currentTab === 'pricing' && (
-          <LandingPage
-            onSelectTab={handleSelectTab}
-            onFileUpload={handleFileUpload}
-            appConfig={appConfig}
-          />
-        )}
       </main>
 
-      {/* Google and Email Auth Modal */}
+      {operationError && <div role="alert" className="fixed bottom-4 right-4 z-50 max-w-md rounded-xl bg-rose-700 px-4 py-3 text-sm text-white shadow-xl">{operationError}<button className="ml-3 underline" onClick={() => setOperationError(null)}>Dismiss</button></div>}
+      {/* Email authentication modal */}
       <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}

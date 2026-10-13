@@ -14,7 +14,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import { ExportHistoryItem, ProjectMetadata } from '../../types/audio';
-import { getSavedProjects, deleteProjectMetadata } from '../../utils/projectStore';
+import { apiRequest } from '../../utils/apiClient';
 
 interface ProjectsDashboardProps {
   exportHistory: ExportHistoryItem[];
@@ -35,27 +35,21 @@ export const ProjectsDashboard: React.FC<ProjectsDashboardProps> = ({
   const [activeTab, setActiveTab] = useState<'bounces' | 'projects' | 'stems'>('bounces');
 
   useEffect(() => {
-    const saved = getSavedProjects();
-    setProjects(saved);
+    apiRequest<{ projects: Array<{ id: string; name: string; createdAt: number; updatedAt: number; metadata: Record<string, unknown> }> }>('/api/projects')
+      .then(({ projects: records }) => setProjects(records.map((record) => ({ id: record.id, name: record.name, createdAt: record.createdAt, updatedAt: record.updatedAt, bpm: Number(record.metadata.bpm || 0), sampleRate: Number(record.metadata.sampleRate || 0), trackCount: Number(record.metadata.trackCount || 0), duration: Number(record.metadata.duration || 0), status: 'draft' }))))
+      .catch(() => setProjects([]));
   }, []);
 
-  const handleDeleteProject = (id: string) => {
-    deleteProjectMetadata(id);
+  const handleDeleteProject = async (id: string) => {
+    await apiRequest(`/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' });
     setProjects((prev) => prev.filter((p) => p.id !== id));
   };
 
-  const handleCreateNewProject = () => {
-    const newProj: ProjectMetadata = {
-      id: `proj-${Date.now()}`,
-      name: `Studio Session #${projects.length + 1}`,
-      bpm: 120,
-      sampleRate: 48000,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      trackCount: 0,
-      duration: 0,
-      status: 'draft',
-    };
+  const handleCreateNewProject = async () => {
+    const name = window.prompt('Name your project');
+    if (!name?.trim()) return;
+    const { project } = await apiRequest<{ project: { id: string; name: string; createdAt: number; updatedAt: number } }>('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim() }) });
+    const newProj: ProjectMetadata = { id: project.id, name: project.name, bpm: 0, sampleRate: 0, createdAt: project.createdAt, updatedAt: project.updatedAt, trackCount: 0, duration: 0, status: 'draft' };
     setProjects((prev) => [newProj, ...prev]);
     onOpenMixer();
   };
@@ -240,7 +234,7 @@ export const ProjectsDashboard: React.FC<ProjectsDashboardProps> = ({
                         <div>
                           <h3 className="font-bold text-sm text-white">{proj.name}</h3>
                           <span className="text-[11px] text-slate-400 font-mono">
-                            {proj.bpm} BPM • {proj.sampleRate} Hz • {proj.trackCount} Tracks
+                          {proj.trackCount} Tracks {proj.sampleRate ? `• ${proj.sampleRate} Hz` : ''}
                           </span>
                         </div>
                       </div>

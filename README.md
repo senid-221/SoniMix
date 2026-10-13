@@ -1,38 +1,32 @@
-# SoniMix Production Backend
+# SoniMix
 
-SoniMix now exposes an asynchronous, server-side audio-processing API. A job is only marked `completed` after its rendered output passes `ffprobe` validation. Missing engines or credentials produce a failed job with the actual prerequisite; no audio operation is simulated.
+SoniMix is a React audio-production workspace with a Node.js API, SQLite persistence, email/password sessions, and asynchronous audio jobs. Processing is only reported complete after output validation. Browser-side mixer/cover actions remain distinct from server-side FFmpeg/Demucs jobs.
 
-## Prerequisites
+## Local setup
 
-- Node.js 20+
-- FFmpeg and FFprobe on `PATH` (or configure `FFMPEG_BIN` and `FFPROBE_BIN`)
-- Demucs on `PATH` (or configure `DEMUCS_BIN`) for genuine four-stem separation
-- An API token in `SONIMIX_API_TOKEN`
-- Optional: `XAI_API_KEY` plus a supported `XAI_MODEL` for orchestration
-- Optional: `ELEVENLABS_API_KEY` for text-to-speech
-
-Copy `.env.example` to `.env`, set the required values, then install and run:
+Requirements: Node.js 22 or later, FFmpeg + FFprobe, and (for stem separation) Demucs with the selected model available. Configure provider keys only on the server. Copy `.env.example` to `.env`, set a unique administrator email/password, and run:
 
 ```sh
 pnpm install
 pnpm dev
 ```
 
-## API workflow
+The database and files live under `SONIMIX_DATA_DIR` (default `./data`). Do not expose or commit this directory. Configure `FFMPEG_BIN`, `FFPROBE_BIN`, and `DEMUCS_BIN` for deployment as needed. If a required engine or provider credential is missing, that operation returns a real failure rather than fabricated output.
 
-All processing endpoints require `Authorization: Bearer <SONIMIX_API_TOKEN>`.
+## Accounts and administration
 
-1. `POST /api/uploads` with `Content-Type: application/octet-stream` and `X-Filename` uploads audio and returns a server-side file reference.
-2. `POST /api/jobs` submits `analyze_audio`, `master_audio`, `separate_stems`, `resample_audio`, `convert_audio`, or `generate_voiceover` work.
-3. `GET /api/jobs/:id` returns real state: `queued`, `processing`, `completed`, `failed`, or `cancelled`.
-4. Once complete, use `GET /api/files/*` to retrieve only the verified files listed in `outputs`.
+Users register and sign in through server-validated email/password endpoints. Passwords are scrypt-hashed; sessions use random HttpOnly, SameSite cookies. The first admin is bootstrapped from `ADMIN_EMAIL` and `ADMIN_PASSWORD` (minimum 14 characters). Admin pages require the administrator role. Projects, jobs, preferences, uploads, exports, and branding settings persist in SQLite.
 
-`POST /api/ai/orchestrate` calls xAI with a fixed function registry. Tool arguments are schema-restricted and can only enqueue approved audio jobs; model output never reaches a shell or arbitrary code executor.
+## Server API
 
-## Provider behavior
+- `POST /api/uploads` accepts `application/octet-stream` and returns an account-owned file reference.
+- `POST /api/jobs` queues `analyze_audio`, `master_audio`, `separate_stems`, `resample_audio`, `convert_audio`, or `generate_voiceover`.
+- `GET /api/jobs/:id` returns persisted status; downloadable output references are checked against ownership.
+- `/api/projects`, `/api/exports`, `/api/profile` provide account-scoped persistence.
+- `/api/ai/orchestrate` invokes xAI Responses function calling for a restricted set of supported jobs. Jobs are enqueued server-side; Grok is not treated as the audio processor.
+- ElevenLabs TTS and voice listing require `ELEVENLABS_API_KEY`.
+- Loudly remains unavailable until the account’s API access and exact endpoint contract are configured. No provider endpoint or entitlement is assumed.
 
-ElevenLabs voice generation uses its documented synchronous text-to-speech endpoint and verifies the returned audio before completion. The Loudly integration stays explicitly unavailable until an account-specific official API contract is configured; SoniMix does not guess provider endpoints or licensing terms.
+## Deployment boundaries
 
-## Production notes
-
-The included queue is process-local and intended for development or a single-node deployment. Move jobs and metadata to a durable queue/database (for example Redis plus Postgres), use object storage with time-limited signed downloads, and replace the shared API token with authenticated user sessions before multi-user deployment.
+The current SQLite database and in-process worker queue target a single-node deployment; SQLite/file storage is not horizontally scalable, and running jobs are failed on restart rather than falsely resumed. Use a durable queue, shared database/object storage, HTTPS, backups, and production monitoring before multi-node or public production deployment. xAI, ElevenLabs, Loudly, FFmpeg, and Demucs behavior must be verified using the deployment’s real credentials and installed engines.

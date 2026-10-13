@@ -14,12 +14,13 @@ import {
 } from 'lucide-react';
 import { ResampleSettings } from '../../types/audio';
 import { resampleAudioBuffer, ResampleResult } from '../../utils/resampler';
-import { computeWaveformPeaks } from '../../utils/audioBufferUtils';
+import { audioBufferToWav, computeWaveformPeaks } from '../../utils/audioBufferUtils';
 import { WaveformCanvas } from '../waveform/WaveformCanvas';
+import { submitJob, uploadAsset, waitForJob } from '../../utils/apiClient';
 
 interface ResamplerStudioProps {
   inputBuffer: AudioBuffer | null;
-  onAddExport: (title: string, blob: Blob, format: string) => void;
+  onAddExport: (title: string, blob: Blob, format: string) => void | Promise<void>;
 }
 
 export const ResamplerStudio: React.FC<ResamplerStudioProps> = ({
@@ -183,21 +184,24 @@ export const ResamplerStudio: React.FC<ResamplerStudioProps> = ({
     }
   };
 
-  const handleDownload = () => {
-    if (!resampleResult) return;
-    const filename = `SoniMix_Resampled_${settings.targetSampleRate}Hz_${settings.bitDepth}bit_${settings.speed}x.wav`;
-
-    const url = URL.createObjectURL(resampleResult.wavBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-
-    onAddExport(filename, resampleResult.wavBlob, `WAV ${settings.bitDepth}-bit (${settings.targetSampleRate}Hz)`);
-    setExportSuccess(true);
-    setTimeout(() => setExportSuccess(false), 4000);
+  const handleDownload = async () => {
+    if (!sourceBuffer || !resampleResult) return;
+    setIsProcessing(true);
+    try {
+      const { file } = await uploadAsset(audioBufferToWav(sourceBuffer, 24), 'resample-source.wav');
+      const queued = await submitJob<{ id: string }>('resample_audio', file, { sampleRate: settings.targetSampleRate, bitDepth: settings.bitDepth, speed: settings.speed, pitchSemitones: settings.pitchSemitones, normalize: settings.normalize, format: settings.format });
+      const job = await waitForJob<{ id: string; state: string; outputs: string[] }>(queued.id);
+      const fileResponse = await fetch(`/api/files/${job.outputs[0].split('/').map(encodeURIComponent).join('/')}`, { credentials: 'include' });
+      if (!fileResponse.ok) throw new Error('The verified resampled file could not be retrieved.');
+      const rendered = await fileResponse.blob();
+      const extension = settings.format === 'mp3' ? 'mp3' : 'wav';
+      const title = `SoniMix_Resampled_${settings.targetSampleRate}Hz_${settings.bitDepth}bit_${settings.speed}x.${extension}`;
+      await onAddExport(title, rendered, `WAV ${settings.bitDepth}-bit (${settings.targetSampleRate}Hz)`);
+      const url = URL.createObjectURL(rendered); const anchor = document.createElement('a'); anchor.href = url; anchor.download = title; anchor.click(); URL.revokeObjectURL(url);
+      setExportSuccess(true); setTimeout(() => setExportSuccess(false), 4000);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Resampling failed.');
+    } finally { setIsProcessing(false); }
   };
 
   const activeDuration = playMode === 'resampled'

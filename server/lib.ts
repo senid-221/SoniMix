@@ -16,6 +16,7 @@ export interface AudioMetadata {
 
 export interface AudioJob {
   id: string;
+  userId: string;
   type: JobType;
   state: JobState;
   createdAt: string;
@@ -83,34 +84,41 @@ export class JobQueue {
   private readonly jobs = new Map<string, AudioJob>();
   private readonly active = new Map<string, ChildProcess>();
 
+  constructor(private readonly persist: (job: AudioJob) => void) {}
+
   get(id: string) { return this.jobs.get(id); }
   list() { return [...this.jobs.values()]; }
 
-  submit(type: JobType, input: string | undefined, execute: (job: AudioJob, attach: (child: ChildProcess) => void) => Promise<Pick<AudioJob, 'outputs' | 'metadata' | 'message'>>) {
+  submit(userId: string, type: JobType, input: string | undefined, execute: (job: AudioJob, attach: (child: ChildProcess) => void) => Promise<Pick<AudioJob, 'outputs' | 'metadata' | 'message'>>) {
     const now = new Date().toISOString();
-    const job: AudioJob = { id: randomUUID(), type, state: 'queued', createdAt: now, updatedAt: now, message: 'Queued', input, outputs: [] };
+    const job: AudioJob = { id: randomUUID(), userId, type, state: 'queued', createdAt: now, updatedAt: now, message: 'Queued', input, outputs: [] };
     this.jobs.set(job.id, job);
+    this.persist(job);
     void this.run(job, execute);
     return job;
   }
 
-  cancel(id: string) {
+  cancel(id: string, userId: string, isAdmin = false) {
     const job = this.jobs.get(id);
-    if (!job || job.state === 'completed' || job.state === 'failed') return false;
+    if (!job || (!isAdmin && job.userId !== userId) || job.state === 'completed' || job.state === 'failed') return false;
     this.active.get(id)?.kill('SIGTERM');
     job.state = 'cancelled'; job.message = 'Cancelled'; job.updatedAt = new Date().toISOString();
+    this.persist(job);
     return true;
   }
 
   private async run(job: AudioJob, execute: (job: AudioJob, attach: (child: ChildProcess) => void) => Promise<Pick<AudioJob, 'outputs' | 'metadata' | 'message'>>) {
     job.state = 'processing'; job.message = 'Processing'; job.updatedAt = new Date().toISOString();
+    this.persist(job);
     try {
       const result = await execute(job, (child) => this.active.set(job.id, child));
-      if (job.state === 'cancelled') return;
+      if ((job.state as JobState) === 'cancelled') return;
       Object.assign(job, result, { state: 'completed', progress: 100, updatedAt: new Date().toISOString() });
+      this.persist(job);
     } catch (error) {
-      if (job.state !== 'cancelled') {
+      if ((job.state as JobState) !== 'cancelled') {
         job.state = 'failed'; job.error = error instanceof Error ? error.message : 'Job failed'; job.message = 'Processing failed'; job.updatedAt = new Date().toISOString();
+        this.persist(job);
       }
     } finally { this.active.delete(job.id); }
   }

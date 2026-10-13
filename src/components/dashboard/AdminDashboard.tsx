@@ -43,7 +43,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   const [config, setConfig] = useState<AppConfig>(appConfig);
   const [users, setUsers] = useState<DirectoryUser[]>(directoryUsers);
-  const [activeTab, setActiveTab] = useState<'config' | 'icons' | 'users' | 'limits'>('config');
+  const [activeTab, setActiveTab] = useState<'config' | 'icons' | 'users'>('config');
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
 
   const logoInputRef = useRef<HTMLInputElement | null>(null);
@@ -239,7 +239,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             { id: 'config', label: 'Settings & Brand Assets', icon: Settings },
             { id: 'icons', label: 'Studio Tool Icons', icon: Sliders },
             { id: 'users', label: 'User Directory', icon: Users },
-            { id: 'limits', label: 'Studio Quotas & Limits', icon: HardDrive },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -873,8 +872,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <tr>
                     <th className="p-3.5">User</th>
                     <th className="p-3.5">Role</th>
-                    <th className="p-3.5">Plan Tier</th>
-                    <th className="p-3.5">Storage Used</th>
+                    <th className="p-3.5">Account Type</th>
                     <th className="p-3.5">Bounces</th>
                     <th className="p-3.5">Status</th>
                     <th className="p-3.5">Joined</th>
@@ -884,8 +882,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <tbody className="divide-y divide-slate-800/80 bg-slate-900/50">
                   {users.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="p-8 text-center text-slate-500 text-xs font-mono">
-                        No registered users yet. When users sign in with Google or Email, their accounts appear in this directory.
+                      <td colSpan={7} className="p-8 text-center text-slate-500 text-xs font-mono">
+                        No accounts have been registered yet.
                       </td>
                     </tr>
                   ) : (
@@ -910,23 +908,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </span>
                       </td>
 
-                      <td className="p-3.5">
-                        <select
-                          value={u.plan}
-                          onChange={(e) =>
-                            handleUserPlanChange(u.id, e.target.value as 'Free' | 'Pro' | 'Studio')
-                          }
-                          className="bg-slate-950 border border-slate-800 text-xs rounded-lg px-2 py-1 text-slate-200 cursor-pointer focus:outline-none"
-                        >
-                          <option value="Free">Free Plan</option>
-                          <option value="Pro">Pro Plan</option>
-                          <option value="Studio">Studio Plan</option>
-                        </select>
-                      </td>
-
-                      <td className="p-3.5 font-mono">
-                        {(u.storageUsedMb / 1024).toFixed(2)} GB
-                      </td>
+                      <td className="p-3.5 text-slate-400">{u.role === 'admin' ? 'Administrator' : 'Account'}</td>
 
                       <td className="p-3.5 font-mono text-emerald-400">
                         {u.bouncesCount}
@@ -961,85 +943,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </button>
                       </td>
                     </tr>
-                  ))}
+                  )))}
                 </tbody>
               </table>
             </div>
           </div>
         )}
 
-        {/* 4. STUDIO QUOTAS & LIMITS */}
-        {activeTab === 'limits' && (
-          <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6 space-y-6">
-            <div>
-              <h2 className="font-heading font-bold text-lg text-white mb-1">
-                Global Production Quotas & Platform Settings
-              </h2>
-              <p className="text-xs text-slate-400">
-                Configure audio file size ceilings, free monthly master quotas, and system maintenance mode.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
-                <div>
-                  <div className="flex justify-between text-xs text-slate-300 mb-1">
-                    <span>Maximum Audio Upload Size</span>
-                    <span className="font-mono text-blue-400 font-bold">{config.maxUploadSizeMb} MB</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="50"
-                    max="500"
-                    step="25"
-                    value={config.maxUploadSizeMb}
-                    onChange={(e) => setConfig({ ...config, maxUploadSizeMb: Number(e.target.value) })}
-                    className="w-full h-1.5 bg-slate-800 rounded appearance-none cursor-pointer"
-                  />
-                  <span className="text-[10px] text-slate-500 block mt-1">Default recommendation: 200MB</span>
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-xs text-slate-300 mb-1">
-                    <span>Free Plan Monthly Mastering Quota</span>
-                    <span className="font-mono text-emerald-400 font-bold">{config.freeMasteringQuota} Tracks / Mo</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="10"
-                    step="1"
-                    value={config.freeMasteringQuota}
-                    onChange={(e) => setConfig({ ...config, freeMasteringQuota: Number(e.target.value) })}
-                    className="w-full h-1.5 bg-slate-800 rounded appearance-none cursor-pointer"
-                  />
-                </div>
-              </div>
-
-              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-white block">Platform Maintenance Mode</span>
-                    <span className="text-[11px] text-slate-400">Pauses high-load DSP rendering for backend maintenance</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={config.maintenanceMode}
-                    onChange={(e) => setConfig({ ...config, maintenanceMode: e.target.checked })}
-                    className="w-4 h-4 rounded text-blue-600 cursor-pointer"
-                  />
-                </div>
-
-                <button
-                  onClick={handleSaveSettings}
-                  className="w-full py-2.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition-all cursor-pointer mt-4"
-                >
-                  Save Platform Quota Rules
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

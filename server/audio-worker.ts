@@ -17,7 +17,7 @@ export async function analyze(job: AudioJob) {
   return { outputs: [], metadata: await inspectAudio(job.input), message: 'Audio analysis verified' };
 }
 
-export async function master(job: AudioJob, settings: { profile?: string; targetLufs?: number; format?: 'wav' | 'mp3' }, attach: (child: import('node:child_process').ChildProcess) => void) {
+export async function master(job: AudioJob, settings: { profile?: string; targetLufs?: number; format?: 'wav' | 'mp3'; bitDepth?: 16 | 24; dsp?: Record<string, unknown> }, attach: (child: import('node:child_process').ChildProcess) => void) {
   await ensureDirectories();
   const input = requireInput(job);
   const target = Math.max(-24, Math.min(-8, Number(settings.targetLufs ?? -14)));
@@ -26,24 +26,44 @@ export async function master(job: AudioJob, settings: { profile?: string; target
   const extension = settings.format === 'mp3' ? 'mp3' : 'wav';
   const output = outputRef(job, extension);
   const outputPath = resolveDataFile(output);
-  const codec = extension === 'mp3' ? ['-c:a', 'libmp3lame', '-b:a', '320k'] : ['-c:a', 'pcm_s24le'];
-  const filter = `${tone},loudnorm=I=${target}:TP=-1.0:LRA=11`;
+  const bitDepth = settings.bitDepth === 16 ? 16 : 24;
+  const codec = extension === 'mp3' ? ['-c:a', 'libmp3lame', '-b:a', '320k'] : ['-c:a', bitDepth === 16 ? 'pcm_s16le' : 'pcm_s24le'];
+  const dsp = settings.dsp || {};
+  const setting = (key: string, fallback: number, minimum: number, maximum: number) => Math.max(minimum, Math.min(maximum, Number.isFinite(Number(dsp[key])) ? Number(dsp[key]) : fallback));
+  const gain = setting('inputGain', 0, -12, 12);
+  const bass = setting('eqBass', 0, -6, 6);
+  const lowMid = setting('eqLowMid', 0, -6, 6);
+  const presence = setting('eqPresence', 0, -6, 6);
+  const air = setting('eqAir', 0, -6, 6);
+  const drive = setting('compressionDrive', 0.25, 0, 1);
+  const ceiling = setting('ceiling', -1, -3, -0.1);
+  const filters = [`volume=${gain}dB`, `equalizer=f=80:t=h:width=200:g=${bass}`, `equalizer=f=320:t=q:width=1.2:g=${lowMid}`, `equalizer=f=3500:t=q:width=1.2:g=${presence}`, `equalizer=f=12000:t=h:width=6000:g=${air}`, `acompressor=threshold=${-20 - drive * 8}dB:ratio=${2 + drive * 4}:attack=20:release=150`, tone, `loudnorm=I=${target}:TP=${ceiling}:LRA=11`];
+  const filter = filters.join(',');
   await runCommand(ffmpeg(), ['-y', '-i', input, '-af', filter, ...codec, outputPath], attach);
   return { outputs: [output], metadata: await inspectAudio(output), message: `Mastered ${profile} render verified` };
 }
 
-export async function resample(job: AudioJob, settings: { sampleRate: number; format?: 'wav' | 'mp3' }, attach: (child: import('node:child_process').ChildProcess) => void) {
+export async function resample(job: AudioJob, settings: { sampleRate: number; format?: 'wav' | 'mp3'; bitDepth?: 16 | 24; speed?: number; pitchSemitones?: number; normalize?: boolean }, attach: (child: import('node:child_process').ChildProcess) => void) {
   await ensureDirectories();
   const input = requireInput(job);
   const sampleRate = Number(settings.sampleRate);
   if (![22050, 32000, 44100, 48000, 88200, 96000].includes(sampleRate)) throw new Error('Unsupported output sample rate');
+  const speed = Number(settings.speed ?? 1);
+  const pitchSemitones = Number(settings.pitchSemitones ?? 0);
+  if (!Number.isFinite(speed) || speed < 0.25 || speed > 4 || !Number.isFinite(pitchSemitones) || pitchSemitones < -24 || pitchSemitones > 24) throw new Error('Speed or pitch is outside the supported range');
+  const source = await inspectAudio(job.input!);
+  const effectiveRate = speed * Math.pow(2, pitchSemitones / 12);
+  const shiftedRate = Math.round(source.sampleRate * effectiveRate);
   const extension = settings.format === 'mp3' ? 'mp3' : 'wav';
   const output = outputRef(job, extension);
-  const codec = extension === 'mp3' ? ['-c:a', 'libmp3lame', '-b:a', '320k'] : ['-c:a', 'pcm_s24le'];
-  await runCommand(ffmpeg(), ['-y', '-i', input, '-af', `aresample=${sampleRate}:resampler=soxr`, '-ar', String(sampleRate), ...codec, resolveDataFile(output)], attach);
+  const bitDepth = settings.bitDepth === 16 ? 16 : 24;
+  const codec = extension === 'mp3' ? ['-c:a', 'libmp3lame', '-b:a', '320k'] : ['-c:a', bitDepth === 16 ? 'pcm_s16le' : 'pcm_s24le'];
+  const filters = [`asetrate=${shiftedRate}`, `aresample=${sampleRate}:resampler=soxr`];
+  if (settings.normalize) filters.push('volume=1.05');
+  await runCommand(ffmpeg(), ['-y', '-i', input, '-af', filters.join(','), '-ar', String(sampleRate), ...codec, resolveDataFile(output)], attach);
   const metadata = await inspectAudio(output);
   if (metadata.sampleRate !== sampleRate) throw new Error(`Rendered sample rate is ${metadata.sampleRate}, expected ${sampleRate}`);
-  return { outputs: [output], metadata, message: `Resampled to ${sampleRate} Hz and verified` };
+  return { outputs: [output], metadata, message: `Rendered at ${sampleRate} Hz, speed ${speed}×, pitch ${pitchSemitones} semitones and verified` };
 }
 
 export async function separate(job: AudioJob, attach: (child: import('node:child_process').ChildProcess) => void) {
