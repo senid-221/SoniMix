@@ -1,39 +1,45 @@
-# SoniMix deployment: Render backend + Vercel frontend
+# SoniMix deployment: Vercel frontend + Render Express backend
 
-## Recommended layout
+## Required architecture
 
-- **Render** runs the full Express server from `server.ts`. It serves both API routes and the built Vite app from the same origin.
-- **Vercel** can continue hosting the static frontend if desired, but its frontend must call the Render API origin. The current frontend uses relative `/api/...` requests, so keeping Vercel as the frontend requires a same-origin proxy/rewrite and cookie-domain decisions. The simplest first deployment is to serve the UI and API together from the Render service and verify login there before splitting them across domains.
+- **Vercel remains the frontend host** for the Vite SPA.
+- **Render runs the full Express backend** from `server.ts`, including authentication, Google OAuth, SQLite, file uploads, audio jobs, and provider APIs.
+- The Vercel rewrite in `vercel.json` forwards browser requests matching `/api/*` to the Render service, so frontend code can keep using relative `/api/...` URLs and the browser sees them as same-origin requests to Vercel.
 
-## Create the Render service
+## Deploy the Render backend
 
-1. Push/merge this branch to the repository (or choose the branch explicitly when creating the Render service).
-2. In Render, choose **New + → Blueprint** and connect `senid-221/SoniMix`; select the branch containing `render.yaml`.
-3. Render reads `render.yaml`, builds with `npm install && npm run build`, starts with `npm run start`, and checks `/api/health`.
-4. Set the required values marked `sync: false` in Render's environment dashboard. Never commit real credentials.
-5. Keep the persistent disk mounted at `/opt/render/project/src/data`. The SQLite database and uploaded/output files live under `SONIMIX_DATA_DIR`. Do not remove the disk after real users create accounts or files.
+1. Create a Render Blueprint using the repository branch that contains `render.yaml` and this document.
+2. Render reads `render.yaml`, runs `npm install && npm run build`, starts `npm run start`, and checks `/api/health`.
+3. Render provisions the configured persistent disk mounted at `/opt/render/project/src/data` for the existing SQLite database and user audio files.
+4. Set the required secrets in Render's environment dashboard; never commit secrets.
 
-## Required environment settings
+### Required Render environment variables
 
 - `ADMIN_EMAIL`: email for the initial administrator.
 - `ADMIN_PASSWORD`: unique password of at least 14 characters.
-- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`: credentials for a Google OAuth Web application.
-- `GOOGLE_REDIRECT_URI`: set to the exact Render URL followed by `/api/auth/google/callback`, e.g. `https://YOUR-RENDER-SERVICE.onrender.com/api/auth/google/callback`.
+- `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`: credentials for a Google OAuth Web application.
+- `GOOGLE_REDIRECT_URI`: use the public **Vercel domain**, followed by `/api/auth/google/callback`, e.g. `https://YOUR-VERCEL-DOMAIN.vercel.app/api/auth/google/callback`.
 
-In Google Cloud Console, add that exact URL to **Authorized redirect URIs** for the OAuth client. After adding/changing the environment values, redeploy the service.
+Use the Vercel domain for the Google callback because the Vercel rewrite forwards the callback request to Render while keeping the browser on the Vercel domain. Add that exact URL to **Authorized redirect URIs** in Google Cloud Console. Google redirect URI and `GOOGLE_REDIRECT_URI` must match exactly.
 
-Optional API provider settings: `XAI_API_KEY`, `XAI_MODEL`, `ELEVENLABS_API_KEY`, `MUSICGPT_API_KEY`, and `ACEDATA_API_KEY`.
+Optional provider settings: `XAI_API_KEY`, `XAI_MODEL`, `ELEVENLABS_API_KEY`, `MUSICGPT_API_KEY`, and `ACEDATA_API_KEY`.
 
-## Verify deployment
+## Configure the Vercel frontend
 
-1. Open `https://YOUR-RENDER-SERVICE.onrender.com/api/health` and confirm it responds with JSON and `"status":"ok"`.
-2. Open `https://YOUR-RENDER-SERVICE.onrender.com/api/auth/google/status`; it should return `{"available":true}` after all three Google variables are set.
-3. Open the Render-served homepage and test account registration, email/password login, Google sign-in, and administrator login.
-4. Keep `GOOGLE_REDIRECT_URI` and the Google Console redirect URI identical, character-for-character.
+1. Keep the existing Vercel project connected to this repository.
+2. Update `vercel.json` by replacing `YOUR-RENDER-SERVICE` in the rewrite destination with the actual Render service name, for example `https://sonimix-api.onrender.com/api/:path*`.
+3. Deploy the branch containing that rewrite to Vercel, or merge it after reviewing the PR.
+4. No Google OAuth secrets belong in Vercel for the proxy design. Keep OAuth secrets only in Render. The Vercel rewrite simply forwards the request.
+
+## Verify both deployments
+
+1. Direct Render health: `https://YOUR-RENDER-SERVICE.onrender.com/api/health` should return JSON with `"status":"ok"`.
+2. Proxied status through Vercel: `https://YOUR-VERCEL-DOMAIN.vercel.app/api/auth/google/status` should return `{"available":true}` after all three Google variables are set on Render.
+3. From the Vercel-hosted homepage, test registration, email/password login, Google sign-in, and admin login.
 
 ## Important limits
 
-- This service uses `node:sqlite`, a local persistent disk, local audio files, and an in-memory job queue. Keep it as a **single persistent Render service** for now; do not scale it to multiple instances and do not run a second service against the same SQLite file.
-- A persistent disk protects data from normal deploys/restarts, but it is not a replacement for backups. Back up the SQLite database and audio directories before future storage changes.
-- FFmpeg is expected to exist on the host; verify `/api/health` and an actual audio task after deployment. Demucs is a separate Python toolchain and is not installed by this Node build command. Stem separation requires Demucs to be installed and configured; it must not be assumed ready solely because this service deployed.
-- A Vercel-hosted frontend should not call its own Vercel functions for authentication if the full auth service is on Render. Either serve the frontend from Render with the API (simplest) or explicitly configure a Vercel rewrite/proxy to Render and verify cookies and OAuth callback handling across the chosen domains.
+- This service uses `node:sqlite`, local files, and an in-memory job queue; keep it as a **single persistent Render service**. Do not scale to multiple instances or point multiple services at the same SQLite file.
+- A persistent disk protects data during normal deploys/restarts but is not a backup. Back up the SQLite database and audio directories before storage changes.
+- Verify FFmpeg/FFprobe and real audio processing on Render. Demucs is a separate Python toolchain and is not installed by the default Node build; stem separation needs explicit installation/configuration and is not guaranteed by this configuration.
+- This configuration is for the intended split architecture: Vercel frontend, Render backend. Do not deploy the frontend from Render.
