@@ -32,3 +32,14 @@ No real values belong in Git.
 6. Retain the previous deployment/data backup through the rollback period.
 
 The current SQLite database is local to the previous host. This repository checkout does not contain its live data or media bytes, so a data import cannot be safely performed by code changes alone.
+
+
+## Implementation status (do not treat this as a completed deployment)
+
+The current changes are migration scaffolding only. `server.ts` still uses the original SQLite class, local filesystem media handling, and in-process queue; the API route handlers have not been switched to durable providers yet. The readiness helper is not a replacement for those provider drivers. Do not deploy this branch to production or merge it as fixed until the runtime implementation, migration importer, and staging tests have passed.
+
+Vercel-specific constraints verified from official documentation:
+- Vercel Blob supports private storage. Server handlers must authenticate the user, verify the stored pathname is owned by that user, then stream the object with the Blob SDK; private Blob URLs are not simply public download URLs.
+- Vercel Queues is a durable system with OIDC-authenticated REST endpoints and is currently documented as Beta. If adopting it, implement OIDC publishing/consumer configuration and pair it with PostgreSQL state; do not just assume a queue token is a static env secret.
+- Vercel Postgres itself is no longer available as a newly provisioned first-party product; use an active Postgres Marketplace integration such as Neon or another supported provider and set the provider-issued `DATABASE_URL`.
+- Vercel Functions have request-body limits that make sending large audio payloads through `/api/uploads` unreliable. Use the documented Blob client upload/token exchange flow for large assets.
