@@ -358,15 +358,63 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         <button
+          type="button"
+          aria-expanded={isMenuOpen}
+          aria-haspopup="true"
           onClick={() => setIsMenuOpen((prev) => !prev)}
-          className={`flex items-center space-x-1 px-2.5 py-1 rounded text-xs font-semibold border ${
-            isMoreActive ? 'bg-slate-800 text-blue-400 border-blue-500/40' : 'text-slate-300 border-slate-700'
+          className={`flex items-center space-x-1 px-2.5 py-1 rounded text-xs font-semibold border transition-colors ${
+            isMoreActive || isMenuOpen ? 'bg-slate-800 text-blue-400 border-blue-500/40' : 'text-slate-300 border-slate-700 hover:text-white hover:bg-slate-800/70'
           }`}
         >
-          <Menu className="w-3.5 h-3.5 text-blue-400" />
+          {isMenuOpen ? <X className="w-3.5 h-3.5 text-blue-400" /> : <Menu className="w-3.5 h-3.5 text-blue-400" />}
           <span>Menu</span>
+          <ChevronDown className={`w-3 h-3 transition-transform ${isMenuOpen ? 'rotate-180' : ''}`} />
         </button>
       </div>
+
+      {/* Mobile menu panel: rendered outside the desktop-only nav so the Menu button works on phones. */}
+      {isMenuOpen && (
+        <div ref={menuRef} className="md:hidden absolute right-4 top-full mt-2 w-[min(20rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl shadow-black/80 p-2 z-50 space-y-1">
+          <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            Production Modules & Assets
+          </div>
+          {menuItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = currentTab === item.id;
+            const customIconUrl = customIcons[item.id];
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  onSelectTab(item.id);
+                  setIsMenuOpen(false);
+                }}
+                className={`w-full flex items-start space-x-3 p-2.5 rounded-xl transition-all cursor-pointer text-left ${
+                  isActive
+                    ? 'bg-blue-600/20 text-white border border-blue-500/30'
+                    : 'hover:bg-slate-800/80 text-slate-300 hover:text-white'
+                }`}
+              >
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                  isActive
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-950 border border-slate-800 text-blue-400'
+                }`}>
+                  {customIconUrl ? (
+                    <img src={customIconUrl} alt={item.label} className="w-4 h-4 object-contain" />
+                  ) : (
+                    <Icon className="w-4 h-4" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-white"><span>{item.label}</span></div>
+                  <p className="text-[11px] text-slate-400 truncate">{item.description}</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </header>
   );
 };
