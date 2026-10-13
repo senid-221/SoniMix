@@ -28,14 +28,62 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [googleEnabled, setGoogleEnabled] = useState(false);
+  const [googleStatus, setGoogleStatus] = useState<'checking' | 'ready' | 'missing' | 'unreachable'>('checking');
+  const [isGoogleStarting, setIsGoogleStarting] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
     let active = true;
-    fetch('/api/auth/google/status').then((response) => response.json()).then((payload) => { if (active) setGoogleEnabled(payload.available === true); }).catch(() => { if (active) setGoogleEnabled(false); });
+    fetch('/api/auth/google/status', { credentials: 'include', cache: 'no-store' })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error('Google sign-in status could not be checked.');
+        return payload;
+      })
+      .then((payload) => {
+        if (active) setGoogleStatus(payload.available === true ? 'ready' : 'missing');
+      })
+      .catch(() => {
+        if (active) setGoogleStatus('unreachable');
+      });
     return () => { active = false; };
   }, [isOpen]);
+
+  const handleGoogleSignIn = async () => {
+    setError(null);
+    setIsGoogleStarting(true);
+    try {
+      // Do not block sign-in based on a status probe; let the server resolve
+      // the configured OAuth redirect and return any actionable setup error.
+      const response = await fetch('/api/auth/google', {
+        method: 'GET',
+        credentials: 'include',
+        redirect: 'manual',
+        cache: 'no-store',
+      });
+
+      if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
+        window.location.assign('/api/auth/google');
+        return;
+      }
+
+      if (response.ok) {
+        window.location.assign('/api/auth/google');
+        return;
+      }
+
+      const message = await response.text().catch(() => '');
+      setError(message || (response.status === 503
+        ? 'Google sign-in needs server credentials and a matching redirect URL.'
+        : 'Google sign-in could not start. Check the server configuration and try again.'));
+    } catch {
+      // A static frontend may not proxy /api routes. Still navigate to the
+      // OAuth start route so the configured backend can handle the request.
+      window.location.assign('/api/auth/google');
+    } finally {
+      setIsGoogleStarting(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -73,8 +121,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
           <button type="button" role="tab" aria-selected={mode === 'login'} className={mode === 'login' ? 'active' : ''} onClick={() => { setMode('login'); setError(null); }}>Sign in</button>
           <button type="button" role="tab" aria-selected={mode === 'register'} className={mode === 'register' ? 'active' : ''} onClick={() => { setMode('register'); setError(null); }}>Create account</button>
         </div>
-        <button type="button" className="auth-google" disabled={!googleEnabled} onClick={() => window.location.assign('/api/auth/google')}><span aria-hidden="true">G</span> Continue with Google</button>
-        {!googleEnabled && <p className="auth-google-note">Google sign-in becomes available when configured by the server.</p>}
+        <button type="button" className="auth-google" onClick={handleGoogleSignIn} aria-busy={isGoogleStarting}>
+          <span aria-hidden="true">G</span>
+          {isGoogleStarting ? 'Connecting to Google…' : 'Continue with Google'}
+        </button>
+        {googleStatus === 'checking' && <p className="auth-google-note">Checking Google sign-in configuration…</p>}
+        {googleStatus === 'missing' && <p className="auth-google-note">Trying the server directly. If setup is incomplete, it will report which Google credentials or redirect URL are needed.</p>}
+        {googleStatus === 'unreachable' && <p className="auth-google-note">Could not check status. The button will still try to open Google sign-in.</p>}
         <div className="auth-divider"><span /> or use email <span /></div>
         <form className="auth-form" onSubmit={handleSubmit}>
           {mode === 'register' && <label className="auth-field"><span>Your name</span><span className="auth-input-wrap"><UserRound size={17} /><input autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Alex Morgan" required /></span></label>}
