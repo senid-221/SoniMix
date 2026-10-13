@@ -1,0 +1,45 @@
+services:
+  - type: web
+    name: sonimix-api
+    runtime: node
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    disk:
+      name: sonimix-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 10
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SONIMIX_DATA_DIR
+        value: /opt/render/project/src/data
+      - key: MAX_UPLOAD_MB
+        value: "200"
+      - key: FFMPEG_BIN
+        value: ffmpeg
+      - key: FFPROBE_BIN
+        value: ffprobe
+      - key: DEMUCS_BIN
+        value: demucs
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: XAI_API_KEY
+        sync: false
+      - key: XAI_MODEL
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: MUSICGPT_API_KEY
+        sync: false
+      - key: ACEDATA_API_KEY
+        sync: false
