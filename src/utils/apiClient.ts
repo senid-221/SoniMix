@@ -34,7 +34,7 @@ export async function saveExport(blob: Blob, title: string, format: string) {
   return { id: result.id, file, downloadUrl: `/api/files/${file}` };
 }
 
-export async function submitJob<T = Record<string, unknown>>(type: string, input: string, settings: Record<string, unknown> = {}) {
+export async function submitJob<T = Record<string, unknown>>(type: string, input: string | undefined, settings: Record<string, unknown> = {}) {
   return apiRequest<T>('/api/jobs', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ type, input, settings }),

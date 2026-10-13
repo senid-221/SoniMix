@@ -20,11 +20,12 @@ Users register and sign in through server-validated email/password endpoints. Pa
 ## Server API
 
 - `POST /api/uploads` accepts `application/octet-stream` and returns an account-owned file reference.
-- `POST /api/jobs` queues `analyze_audio`, `master_audio`, `separate_stems`, `resample_audio`, `convert_audio`, or `generate_voiceover`.
+- `POST /api/jobs` queues `analyze_audio`, `master_audio`, `separate_stems`, `resample_audio`, `convert_audio`, `generate_voiceover`, or `generate_music`.
 - `GET /api/jobs/:id` returns persisted status; downloadable output references are checked against ownership.
 - `/api/projects`, `/api/exports`, `/api/profile` provide account-scoped persistence.
 - `/api/ai/orchestrate` invokes xAI Responses function calling for a restricted set of supported jobs. Jobs are enqueued server-side; Grok is not treated as the audio processor.
 - ElevenLabs TTS and voice listing require `ELEVENLABS_API_KEY`.
+- MusicGPT music generation requires a server-only `MUSICGPT_API_KEY`. SoniMix submits an asynchronous provider task, polls its real status, downloads returned tracks, and verifies each file with FFprobe before marking the job complete. Configure the key in `.env`; check `/api/providers/musicgpt` while signed in. MusicGPT account credits and API permissions are required.
 - Loudly remains unavailable until the account’s API access and exact endpoint contract are configured. No provider endpoint or entitlement is assumed.
 
 ## Deployment boundaries

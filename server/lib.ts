@@ -4,7 +4,7 @@ import { mkdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 export type JobState = 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
-export type JobType = 'analyze_audio' | 'master_audio' | 'separate_stems' | 'resample_audio' | 'convert_audio' | 'generate_voiceover';
+export type JobType = 'analyze_audio' | 'master_audio' | 'separate_stems' | 'resample_audio' | 'convert_audio' | 'generate_voiceover' | 'generate_music';
 
 export interface AudioMetadata {
   duration: number;

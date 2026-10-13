@@ -362,7 +362,7 @@ export default function App() {
         )}
 
         {currentTab === 'voice' && <VoiceStudio onSaved={handleAddExport} />}
-        {currentTab === 'music' && <MusicGenerationStudio />}
+        {currentTab === 'music' && <MusicGenerationStudio onSaved={handleAddExport} />}
 
         {currentTab === 'resampler' && (
           <ResamplerStudio
