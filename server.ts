@@ -7,7 +7,7 @@ import dotenv from 'dotenv';
 import { analyze, master, resample, separate } from './server/audio-worker.js';
 import { ensureDirectories, JobQueue, JobType, resolveDataFile, safeBaseName } from './server/lib.js';
 import { SoniMixDatabase, SessionUser } from './server/database.js';
-import { elevenLabsVoiceover, generateMusic, listElevenLabsVoices, loudlyStatus, musicGptStatus } from './server/providers.js';
+import { aceDataSunoStatus, elevenLabsVoiceover, generateAceSunoMusic, generateMusic, listElevenLabsVoices, loudlyStatus, musicGptStatus } from './server/providers.js';
 
 dotenv.config();
 const app = express();
@@ -108,7 +108,12 @@ function submitJob(userId: string, type: JobType, input: string | undefined, set
       modelId: typeof settings.modelId === 'string' ? settings.modelId : undefined,
       outputFormat: typeof settings.outputFormat === 'string' ? settings.outputFormat : undefined,
     }));
-    case 'generate_music': return queue.submit(userId, type, undefined, (job) => generateMusic(job, {
+    case 'generate_music': return queue.submit(userId, type, undefined, (job) => settings.provider === 'acedata_suno' ? generateAceSunoMusic(job, {
+      prompt: stringValue(settings.prompt, 'prompt'), title: typeof settings.title === 'string' ? settings.title : undefined,
+      musicStyle: typeof settings.musicStyle === 'string' ? settings.musicStyle : undefined,
+      lyrics: typeof settings.lyrics === 'string' ? settings.lyrics : undefined,
+      model: typeof settings.model === 'string' ? settings.model : undefined, instrumental: settings.makeInstrumental === true,
+    }) : generateMusic(job, {
       prompt: stringValue(settings.prompt, 'prompt'), title: typeof settings.title === 'string' ? settings.title : undefined,
       musicStyle: typeof settings.musicStyle === 'string' ? settings.musicStyle : undefined,
       lyrics: typeof settings.lyrics === 'string' ? settings.lyrics : undefined,
@@ -125,10 +130,10 @@ const toolDefinitions = [
   { type: 'function', name: 'separate_stems', description: 'Create genuine Demucs stems from uploaded audio.', parameters: { type: 'object', properties: { input: { type: 'string' } }, required: ['input'], additionalProperties: false } },
   { type: 'function', name: 'resample_audio', description: 'Render verified sample-rate conversion with FFmpeg.', parameters: { type: 'object', properties: { input: { type: 'string' }, sampleRate: { type: 'number', enum: [22050, 32000, 44100, 48000, 88200, 96000] }, format: { type: 'string', enum: ['wav', 'mp3'] } }, required: ['input', 'sampleRate'], additionalProperties: false } },
   { type: 'function', name: 'generate_voiceover', description: 'Generate a voiceover via ElevenLabs.', parameters: { type: 'object', properties: { text: { type: 'string' }, voiceId: { type: 'string' }, modelId: { type: 'string' } }, required: ['text', 'voiceId'], additionalProperties: false } },
-  { type: 'function', name: 'generate_music', description: 'Submit a real music generation request to MusicGPT and return verified generated audio files.', parameters: { type: 'object', properties: { prompt: { type: 'string', maxLength: 2000 }, title: { type: 'string', maxLength: 120 }, musicStyle: { type: 'string', maxLength: 500 }, lyrics: { type: 'string', maxLength: 5000 }, model: { type: 'string', enum: ['v6', 'v6-pro', 'v7', 'v7-pro'] }, makeInstrumental: { type: 'boolean' }, vocalOnly: { type: 'boolean' }, gender: { type: 'string', enum: ['male', 'female', 'neutral'] } }, required: ['prompt'], additionalProperties: false } },
+  { type: 'function', name: 'generate_music', description: 'Submit a real music generation request to MusicGPT or Suno via Ace Data Cloud and return verified generated audio files.', parameters: { type: 'object', properties: { provider: { type: 'string', enum: ['musicgpt', 'acedata_suno'] }, prompt: { type: 'string', maxLength: 2000 }, title: { type: 'string', maxLength: 120 }, musicStyle: { type: 'string', maxLength: 500 }, lyrics: { type: 'string', maxLength: 5000 }, model: { type: 'string' }, makeInstrumental: { type: 'boolean' }, vocalOnly: { type: 'boolean' }, gender: { type: 'string', enum: ['male', 'female', 'neutral'] } }, required: ['prompt'], additionalProperties: false } },
 ] as const;
 
-app.get('/api/health', (_request, response) => response.json({ status: 'ok', service: 'SoniMix', authentication: 'session-cookie', engines: { ffmpeg: process.env.FFMPEG_BIN || 'ffmpeg', demucs: process.env.DEMUCS_BIN || 'demucs' }, providers: { xai: Boolean(process.env.XAI_API_KEY && process.env.XAI_MODEL), loudly: loudlyStatus(), elevenlabs: Boolean(process.env.ELEVENLABS_API_KEY), musicgpt: musicGptStatus() } }));
+app.get('/api/health', (_request, response) => response.json({ status: 'ok', service: 'SoniMix', authentication: 'session-cookie', engines: { ffmpeg: process.env.FFMPEG_BIN || 'ffmpeg', demucs: process.env.DEMUCS_BIN || 'demucs' }, providers: { xai: Boolean(process.env.XAI_API_KEY && process.env.XAI_MODEL), loudly: loudlyStatus(), elevenlabs: Boolean(process.env.ELEVENLABS_API_KEY), musicgpt: musicGptStatus(), acedataSuno: aceDataSunoStatus() } }));
 app.get('/api/app-config', (_request, response) => response.json({ config: db.getAppConfig() || {} }));
 app.put('/api/admin/app-config', requireUser, requireAdmin, (request, response) => {
   if (!request.body || typeof request.body !== 'object' || JSON.stringify(request.body).length > 100_000) return response.status(400).json({ error: 'Invalid or oversized app settings.' });
@@ -236,6 +241,7 @@ app.get('/api/files/*', requireUser, (request: AuthenticatedRequest, response) =
 
 app.get('/api/providers/loudly', requireUser, (_request, response) => response.json(loudlyStatus()));
 app.get('/api/providers/musicgpt', requireUser, (_request, response) => response.json(musicGptStatus()));
+app.get('/api/providers/suno', requireUser, (_request, response) => response.json(aceDataSunoStatus()));
 app.get('/api/providers/elevenlabs/voices', requireUser, async (_request, response) => {
   try { response.json(await listElevenLabsVoices()); }
   catch (error) { response.status(503).json({ error: error instanceof Error ? error.message : 'ElevenLabs unavailable' }); }

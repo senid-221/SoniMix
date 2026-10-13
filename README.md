@@ -26,7 +26,20 @@ Users register and sign in through server-validated email/password endpoints. Pa
 - `/api/ai/orchestrate` invokes xAI Responses function calling for a restricted set of supported jobs. Jobs are enqueued server-side; Grok is not treated as the audio processor.
 - ElevenLabs TTS and voice listing require `ELEVENLABS_API_KEY`.
 - MusicGPT music generation requires a server-only `MUSICGPT_API_KEY`. SoniMix submits an asynchronous provider task, polls its real status, downloads returned tracks, and verifies each file with FFprobe before marking the job complete. Configure the key in `.env`; check `/api/providers/musicgpt` while signed in. MusicGPT account credits and API permissions are required.
+- Suno music generation via Ace Data Cloud requires a server-only `ACEDATA_API_KEY`. SoniMix submits to `/suno/audios`, polls `/suno/tasks`, downloads the actual result from an allowlisted media host, and verifies it with FFprobe. The Ace Data Cloud account must have the Suno and task-query API permissions and sufficient credit; check `/api/providers/suno` while signed in.
 - Loudly remains unavailable until the account’s API access and exact endpoint contract are configured. No provider endpoint or entitlement is assumed.
+
+## Server environment keys
+
+Set provider credentials only in the server-side `.env` file (never in `VITE_*` variables or browser code):
+
+- `XAI_API_KEY` and `XAI_MODEL` — optional AI request orchestration; both are required to enable it.
+- `ELEVENLABS_API_KEY` — optional text-to-speech and voice listing.
+- `MUSICGPT_API_KEY` — optional MusicGPT generation.
+- `ACEDATA_API_KEY` — optional Suno generation through Ace Data Cloud.
+- There is no Loudly key configured because SoniMix does not yet have a verified Loudly API adapter.
+
+Core audio processing does not require an external API key; it requires the configured FFmpeg/FFprobe binaries and Demucs model as applicable. `ADMIN_EMAIL` and `ADMIN_PASSWORD` are required for initial administrator setup; they are credentials, not provider API keys. Copy `.env.example` to `.env` and set only the integrations you use.
 
 ## Deployment boundaries
 

@@ -38,6 +38,76 @@ export function musicGptStatus() {
   return { provider: 'MusicGPT', available: Boolean(process.env.MUSICGPT_API_KEY), reason: process.env.MUSICGPT_API_KEY ? undefined : 'Add MUSICGPT_API_KEY to the server environment.' };
 }
 
+export function aceDataSunoStatus() {
+  return { provider: 'Suno via Ace Data Cloud', available: Boolean(process.env.ACEDATA_API_KEY), reason: process.env.ACEDATA_API_KEY ? undefined : 'Add ACEDATA_API_KEY to the server environment.' };
+}
+
+interface SunoSong { audio_url?: string; state?: string; title?: string; id?: string }
+
+function findSunoSongs(value: unknown, songs: SunoSong[] = [], depth = 0): SunoSong[] {
+  if (depth > 8 || !value || typeof value !== 'object') return songs;
+  if (Array.isArray(value)) {
+    for (const item of value) findSunoSongs(item, songs, depth + 1);
+    return songs;
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.audio_url === 'string') songs.push({ audio_url: record.audio_url, state: typeof record.state === 'string' ? record.state : undefined, title: typeof record.title === 'string' ? record.title : undefined, id: typeof record.id === 'string' ? record.id : undefined });
+  for (const item of Object.values(record)) findSunoSongs(item, songs, depth + 1);
+  return songs;
+}
+
+export async function generateAceSunoMusic(job: AudioJob, request: { prompt: string; title?: string; musicStyle?: string; lyrics?: string; model?: string; instrumental?: boolean }) {
+  const apiKey = process.env.ACEDATA_API_KEY;
+  if (!apiKey) throw new Error('ACEDATA_API_KEY is not configured');
+  if (!request.prompt?.trim() || request.prompt.length > 2000) throw new Error('Prompt must contain 1–2,000 characters');
+  if (request.title && request.title.length > 120) throw new Error('Title must be 120 characters or fewer');
+  if (request.musicStyle && request.musicStyle.length > 500) throw new Error('Music style must be 500 characters or fewer');
+  if (request.lyrics && request.lyrics.length > 5000) throw new Error('Lyrics must be 5,000 characters or fewer');
+  const supportedModels = ['chirp-v4', 'chirp-v4-5', 'chirp-v5', 'chirp-v6'];
+  const model = request.model && supportedModels.includes(request.model) ? request.model : 'chirp-v6';
+  const response = await providerFetch('https://api.acedata.cloud/suno/audios', {
+    method: 'POST', headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ action: 'generate', prompt: request.prompt.trim(), model, custom: Boolean(request.lyrics?.trim()), instrumental: request.instrumental === true, ...(request.lyrics?.trim() ? { lyric: request.lyrics.trim() } : {}), ...(request.musicStyle?.trim() ? { style: request.musicStyle.trim() } : {}), ...(request.title?.trim() ? { title: request.title.trim() } : {}) }),
+  });
+  const submitted = await response.json() as { success?: boolean; task_id?: string; data?: unknown; message?: string; error?: string };
+  if (!submitted.success || !submitted.task_id) throw new Error(submitted.message || submitted.error || 'AceData did not return a Suno task ID');
+
+  const deadline = Date.now() + 15 * 60 * 1000;
+  let songs = findSunoSongs(submitted.data).filter((song) => song.audio_url && (!song.state || ['succeeded', 'success', 'complete', 'completed'].includes(song.state.toLowerCase())));
+  while (!songs.length && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 7000));
+    const taskResponse = await providerFetch('https://api.acedata.cloud/suno/tasks', {
+      method: 'POST', headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ id: submitted.task_id, action: 'retrieve' }),
+    });
+    const task = await taskResponse.json() as Record<string, unknown>;
+    songs = findSunoSongs(task).filter((song) => song.audio_url && (!song.state || ['succeeded', 'success', 'complete', 'completed'].includes(song.state.toLowerCase())));
+    const failed = findSunoSongs(task).some((song) => ['failed', 'error', 'cancelled'].includes(song.state?.toLowerCase() || ''));
+    if (failed) throw new Error('Suno generation failed in Ace Data Cloud');
+    const errorText = typeof task.error === 'string' ? task.error : typeof task.message === 'string' && task.success === false ? task.message : undefined;
+    if (errorText) throw new Error(`AceData task retrieval failed: ${errorText.slice(0, 300)}`);
+  }
+  if (!songs.length) throw new Error('Suno generation timed out before returning completed audio');
+
+  const directory = path.join(OUTPUT_DIR, job.id);
+  await mkdir(directory, { recursive: true });
+  const outputs: string[] = [];
+  let metadata;
+  for (const [index, song] of songs.entries()) {
+    const url = new URL(song.audio_url!);
+    if (url.protocol !== 'https:' || !['cdn1.suno.ai', 'cdn.acedata.cloud', 'platform.cdn.acedata.cloud', 'storage.googleapis.com'].includes(url.hostname)) throw new Error('AceData returned an untrusted Suno audio host');
+    const audioResponse = await fetch(url, { signal: AbortSignal.timeout(60_000), redirect: 'error' });
+    if (!audioResponse.ok) throw new Error(`Suno audio download failed (${audioResponse.status})`);
+    const audio = Buffer.from(await audioResponse.arrayBuffer());
+    if (!audio.length || audio.length > 250 * 1024 * 1024) throw new Error('Suno audio file is empty or exceeds the 250 MB limit');
+    const file = `outputs/${job.id}/suno-${index + 1}.mp3`;
+    await writeFile(resolveDataFile(file), audio);
+    metadata = await inspectAudio(file);
+    outputs.push(file);
+  }
+  return { outputs, metadata, message: `Suno via Ace Data Cloud returned ${outputs.length} downloaded and verified track${outputs.length === 1 ? '' : 's'}` };
+}
+
 export async function generateMusic(job: AudioJob, request: { prompt: string; title?: string; musicStyle?: string; lyrics?: string; model?: string; makeInstrumental?: boolean; vocalOnly?: boolean; gender?: string }) {
   const apiKey = process.env.MUSICGPT_API_KEY;
   if (!apiKey) throw new Error('MUSICGPT_API_KEY is not configured');
