@@ -1,64 +1,57 @@
-# SoniMix authentication and Vercel deployment check
+# SoniMix authentication and Vercel deployment
 
-This note records the current authentication contract without changing the studio UI or replacing the existing storage implementation.
+## Existing authentication routes
 
-## Current authentication routes
-
-- `GET /api/health` — service and provider status
+- `GET /api/health` — service status
 - `POST /api/auth/register` — user registration
-- `POST /api/auth/login` — user email/password sign-in
-- `POST /api/auth/admin/login` — administrator-only email/password sign-in
-- `GET /api/auth/session` — current cookie-backed session
+- `POST /api/auth/login` — email/password sign-in
+- `POST /api/auth/admin/login` — admin-only sign-in
+- `GET /api/auth/session` — current session
 - `POST /api/auth/logout` — revoke current session
-- `GET /api/auth/google/status` — whether all server-side OAuth settings exist
-- `GET /api/auth/google` — begin Google authorization-code flow
-- `GET /api/auth/google/callback` — validate state, exchange code, verify Google identity, create a session
+- `GET /api/auth/google/status` — reports whether OAuth settings exist
+- `GET /api/auth/google` — start Google authorization-code flow
+- `GET /api/auth/google/callback` — validate OAuth state and establish session
 
-## Vercel environment settings
+## Google OAuth settings
 
-The OAuth code reads these exact **server-side** environment variable names:
+Set these exact server-side variables in Vercel:
 
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `GOOGLE_REDIRECT_URI`
 
-For production, `GOOGLE_REDIRECT_URI` must equal the exact public origin plus `/api/auth/google/callback`, for example:
+For production, `GOOGLE_REDIRECT_URI` must be the exact HTTPS production URL ending in `/api/auth/google/callback`. Add the identical URL to the OAuth client's Authorized redirect URIs in Google Cloud Console. Do not prefix server secrets with `VITE_` or expose them to browser code.
 
-```text
-https://YOUR-DEPLOYMENT-DOMAIN/api/auth/google/callback
-```
+The current frontend disables the Google button whenever `/api/auth/google/status` returns `available: false`. If false, check the three settings above in the Vercel Production environment and redeploy.
 
-The identical URI must be listed in the OAuth client's **Authorized redirect URIs** in Google Cloud Console. Add the deployed domain to the OAuth consent application's authorized domains when required. Apply the changes to the Vercel Production environment and redeploy. Do not prefix these secrets with `VITE_` or expose them to browser code.
+## Vercel storage compatibility
 
-The Google button is disabled by the current frontend when `/api/auth/google/status` returns `available: false`. Check that endpoint on the deployed host; if it is false, at least one of the three settings is absent from the running server's environment.
+The original runtime uses Node's built-in SQLite, local file paths for audio uploads/outputs, and a process-local queue. A Vercel serverless rewrite alone does not make those durable. This branch adds a PostgreSQL schema and storage/queue contracts plus a migration plan, but the **full runtime migration is not yet complete**: the live persistence drivers, file transfer, Vercel handlers, and external worker have not been integration-tested against provisioned service instances. Do not deploy this branch to Production or merge it as a completed runtime fix yet.
 
-## Important deployment constraint
+See:
+- `server/postgres-schema.sql` for the target durable schema
+- `server/storage-contract.ts` for object store/queue interfaces
+- `server/durable-queue-contract.ts` for atomic claim/retry SQL
+- `server/storage-migration-status.ts` for deployment readiness checks
+- `VERCEL_PERSISTENCE_MIGRATION.md` for required service setup and data migration
 
-The current backend is a long-lived Express server started by `tsx server.ts`. It uses Node's built-in SQLite database at `SONIMIX_DATA_DIR/database/sonimix.sqlite`, a process-local job queue, and local files for uploads/outputs. These are not a durable Vercel serverless storage design. Vercel environment variables alone cannot turn a local SQLite file into shared persistent storage, nor can this backend assume that its in-memory queue survives between invocations.
+Target architecture:
+- PostgreSQL for users, sessions, projects, jobs, preferences, exports, files, and app settings
+- Private Vercel Blob for audio bytes
+- An external audio worker that actually has FFmpeg/FFprobe and Demucs available
+- PostgreSQL-backed atomic job claims/retries or a supported durable queue
 
-Do not expose this as fixed by merely adding a `vercel.json` rewrite: route rewriting alone would not make SQLite sessions, database schema, jobs, and uploads durable. A complete Vercel migration needs a persistent database (for example PostgreSQL), object storage for uploaded/output files, and suitable worker/queue execution, with tests and migration of the existing schema/data. This is deliberately not attempted in this minimal, non-destructive change because switching persistence without a deployment database connection and credentials could break existing users/data.
+## Existing SQLite tables
 
-## Existing tables
+The current schema creates `users`, `sessions`, `projects`, `jobs`, `exports`, `user_preferences`, `files`, and `app_settings`. It adds Google account linking and compatibility columns on startup. The PostgreSQL schema is provided as a target schema; migration of existing rows and media bytes must happen from a backup of the original persistent host.
 
-The current SQLite schema creates these tables on backend startup:
+## Rollout verification
 
-- `users` — user/admin identities, password hashes, status, optional Google subject
-- `sessions` — hashed session tokens and expiry
-- `projects` — account-owned projects
-- `jobs` — persisted job state/payload
-- `exports` — user export history
-- `user_preferences` — account preferences
-- `files` — ownership records for uploads/outputs
-- `app_settings` — admin-configurable application settings
+1. Back up SQLite and all media from the original persistent host.
+2. Provision PostgreSQL and private Blob, then apply the schema and migrate rows/media.
+3. Provision the audio worker, and verify a real audio job completes with the result stored durably.
+4. Verify `/api/health` and `/api/auth/google/status` on a staging deployment.
+5. Test user login, administrator login, Google OAuth callback, refresh/session persistence, projects, exports, and file ownership/URLs.
+6. Switch production only after these tests pass, and keep the former deployment/backup available for rollback.
 
-The database bootstrap also adds the `google_sub`, `status`, and `file_size` columns/indexes for compatible existing databases and bootstraps the administrator from `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
-
-## Verification steps after deployment
-
-1. Open `https://YOUR-DEPLOYMENT-DOMAIN/api/health`.
-2. Open `https://YOUR-DEPLOYMENT-DOMAIN/api/auth/google/status`; it should return `{"available":true}`.
-3. Verify the Google OAuth redirect URI exactly matches `GOOGLE_REDIRECT_URI`.
-4. Test user registration/login and administrator login using the configured admin account.
-5. Test a refresh after login. If the session disappears or a database/file error occurs across requests, deploy the persistent-storage migration before relying on production accounts.
-
-Never add private secret values to this document or commit them to Git.
+Never add secret values to Git.
