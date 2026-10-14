@@ -93,6 +93,14 @@ function requireAdmin(request: AuthenticatedRequest, response: Response, next: N
   next();
 }
 
+function getGoogleRedirectUri() {
+  const configured = process.env.GOOGLE_REDIRECT_URI?.trim();
+  // Production should use the public Vercel URL; never default to localhost.
+  if (configured) return configured;
+  if (process.env.NODE_ENV !== 'production') return undefined;
+  return undefined;
+}
+
 function stringValue(value: unknown, name: string) {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${name} is required`);
   return value;
@@ -177,11 +185,14 @@ app.post('/api/auth/login', rateLimit('login', 10, 10 * 60 * 1000), async (reque
   } catch (error) { response.status(401).json({ error: error instanceof Error ? error.message : 'Sign in failed' }); }
 });
 
-app.get('/api/auth/google/status', (_request, response) => response.json({ available: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REDIRECT_URI) }));
+app.get('/api/auth/google/status', (_request, response) => response.json({ available: Boolean(process.env.GOOGLE_CLIENT_ID?.trim() && process.env.GOOGLE_CLIENT_SECRET?.trim() && getGoogleRedirectUri()) }));
 app.get('/api/auth/google', rateLimit('google-auth', 20, 10 * 60 * 1000), (request, response) => {
   const clientId = process.env.GOOGLE_CLIENT_ID;
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
-  if (!clientId || !process.env.GOOGLE_CLIENT_SECRET || !redirectUri) return response.status(503).send('Google sign-in is not configured on this server.');
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+  const redirectUri = getGoogleRedirectUri();
+  if (!clientId?.trim() || !clientSecret || !redirectUri) {
+    return response.status(503).send('Google sign-in is not configured on this server. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URI to the production Vercel callback URL in Render Environment.');
+  }
   const state = randomBytes(32).toString('base64url');
   setGoogleStateCookie(response, state);
   const authorization = new URL('https://accounts.google.com/o/oauth2/v2/auth');
@@ -196,8 +207,8 @@ app.get('/api/auth/google/callback', rateLimit('google-callback', 30, 10 * 60 * 
   if (request.query.error || typeof request.query.code !== 'string') return response.status(400).send('Google sign-in was cancelled or denied.');
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
-  if (!clientId || !clientSecret || !redirectUri) return response.status(503).send('Google sign-in is not configured on this server.');
+  const redirectUri = getGoogleRedirectUri();
+  if (!clientId?.trim() || !clientSecret?.trim() || !redirectUri) return response.status(503).send('Google sign-in is not configured on this server. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URI to the production Vercel callback URL in Render Environment.');
   try {
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, signal: AbortSignal.timeout(15_000),
