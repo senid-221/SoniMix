@@ -39,6 +39,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
   const [settings, setSettings] = useState<MasteringSettings>(DEFAULT_MASTERING_PRESETS['Streaming Release']);
   const [originalMetrics, setOriginalMetrics] = useState<AudioMetrics | null>(null);
   const [masteredMetrics, setMasteredMetrics] = useState<AudioMetrics | null>(null);
+  const [serverLoudness, setServerLoudness] = useState<{ integratedLufs: number; truePeakDbtp: number; loudnessRangeLu?: number } | null>(null);
   const [masteredBuffer, setMasteredBuffer] = useState<AudioBuffer | null>(null);
   const [masteredPeaks, setMasteredPeaks] = useState<number[]>([]);
   const [originalPeaks, setOriginalPeaks] = useState<number[]>([]);
@@ -80,6 +81,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
   const renderMaster = async (buf: AudioBuffer, masterSettings: MasteringSettings, pluginBypass = pluginChainBypassed) => {
     setIsProcessing(true);
     setAiReport(null);
+    setServerLoudness(null);
     try {
       const { file } = await uploadAsset(audioBufferToWav(buf, 24), 'master-preview.wav');
       const preset = masterSettings.presetName.toLowerCase();
@@ -91,7 +93,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
         format: 'wav',
         dsp: { ...masterSettings, pluginBypass },
       });
-      const job = await waitForJob<{ id: string; state: string; outputs: string[]; message: string }>(queued.id);
+      const job = await waitForJob<{ id: string; state: string; outputs: string[]; message: string; metadata?: { integratedLufs?: number; truePeakDbtp?: number; loudnessRangeLu?: number } }>(queued.id);
       const response = await fetch(`/api/files/${job.outputs[0].split('/').map(encodeURIComponent).join('/')}`, { credentials: 'include' });
       if (!response.ok) throw new Error('The server-rendered mastering preview could not be retrieved.');
       const renderedBlob = await response.blob();
@@ -101,11 +103,14 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
       setMasteredBuffer(rendered);
       setMasteredPeaks(computeWaveformPeaks(rendered));
       setMasteredMetrics(analyzeAudioMetrics(rendered));
+      if (typeof job.metadata?.integratedLufs === 'number' && typeof job.metadata?.truePeakDbtp === 'number') {
+        setServerLoudness({ integratedLufs: job.metadata.integratedLufs, truePeakDbtp: job.metadata.truePeakDbtp, loudnessRangeLu: job.metadata.loudnessRangeLu });
+      }
       setAiReport({
         style: 'SoniMix server mastering engine',
         lufsAdvice: job.message,
         eqSuggestions: [],
-        dynamicsAdvice: 'Preview processed by the server FFmpeg mastering chain. Loudness and peak cards are client-side estimates; they are not a certified ITU loudness report.',
+        dynamicsAdvice: 'The server measured integrated loudness, true peak and loudness range with FFmpeg EBU R128 loudnorm analysis after rendering. Browser RMS/crest metrics remain estimates.',
       });
     } catch (error) {
       setAiReport({
@@ -235,7 +240,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
       const { file } = await uploadAsset(audioBufferToWav(inputBuffer, 24), 'master-source.wav');
       const result = await apiRequest<{ explanation: string | null; jobs: Array<{ id: string }> }>('/api/ai/orchestrate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ instruction: `Analyze and master this uploaded audio file for a balanced streaming release near ${settings.targetLufs} LUFS. Source file reference: ${file}. Use the supported master_audio tool.` }) });
       if (!result.jobs.length) throw new Error(result.explanation || 'Grok did not request a supported mastering job.');
-      const job = await waitForJob<{ id: string; state: string; outputs: string[]; message: string }>(result.jobs[0].id);
+      const job = await waitForJob<{ id: string; state: string; outputs: string[]; message: string; metadata?: { integratedLufs?: number; truePeakDbtp?: number; loudnessRangeLu?: number } }>(result.jobs[0].id);
       const fileResponse = await fetch(`/api/files/${job.outputs[0].split('/').map(encodeURIComponent).join('/')}`, { credentials: 'include' });
       if (!fileResponse.ok) throw new Error('The verified mastered file could not be retrieved.');
       const masteredBlob = await fileResponse.blob();
@@ -244,6 +249,9 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
       setMasteredBuffer(decoded);
       setMasteredPeaks(computeWaveformPeaks(decoded));
       setMasteredMetrics(analyzeAudioMetrics(decoded));
+      if (typeof job.metadata?.integratedLufs === 'number' && typeof job.metadata?.truePeakDbtp === 'number') {
+        setServerLoudness({ integratedLufs: job.metadata.integratedLufs, truePeakDbtp: job.metadata.truePeakDbtp, loudnessRangeLu: job.metadata.loudnessRangeLu });
+      }
       setAiReport({ style: 'Grok-orchestrated server master', lufsAdvice: job.message, eqSuggestions: [], dynamicsAdvice: result.explanation || 'Processing was executed by the configured FFmpeg engine and the output passed server-side audio validation.' });
     } catch (error) {
       setAiReport({ style: 'Not completed', lufsAdvice: error instanceof Error ? error.message : 'AI mastering failed.', eqSuggestions: [], dynamicsAdvice: 'No mastering result is claimed.' });
@@ -259,10 +267,13 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
     try {
       const { file } = await uploadAsset(audioBufferToWav(inputBuffer, 24), 'master-source.wav');
       const queued = await submitJob<{ id: string }>('master_audio', file, { targetLufs: settings.targetLufs, profile: 'balanced', bitDepth, format: 'wav', dsp: { ...settings, pluginBypass: pluginChainBypassed } });
-      const job = await waitForJob<{ id: string; state: string; outputs: string[]; message: string }>(queued.id);
+      const job = await waitForJob<{ id: string; state: string; outputs: string[]; message: string; metadata?: { integratedLufs?: number; truePeakDbtp?: number; loudnessRangeLu?: number } }>(queued.id);
       const response = await fetch(`/api/files/${job.outputs[0].split('/').map(encodeURIComponent).join('/')}`, { credentials: 'include' });
       if (!response.ok) throw new Error('The verified master could not be downloaded.');
       const blob = await response.blob();
+      if (typeof job.metadata?.integratedLufs === 'number' && typeof job.metadata?.truePeakDbtp === 'number') {
+        setServerLoudness({ integratedLufs: job.metadata.integratedLufs, truePeakDbtp: job.metadata.truePeakDbtp, loudnessRangeLu: job.metadata.loudnessRangeLu });
+      }
       const filename = `SoniMix_Master_${settings.targetLufs}LUFS_${bitDepth}bit.wav`;
       await onAddExport(filename, blob, `Mastered WAV ${bitDepth}-bit`);
       const url = URL.createObjectURL(blob);
@@ -461,37 +472,37 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
             {/* Integrated Loudness */}
             <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
               <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-                <span>Browser LUFS Estimate</span>
+                <span>Integrated Loudness (Server)</span>
                 <span className="font-mono text-emerald-400">Target: {settings.targetLufs}</span>
               </div>
               <div className="text-2xl font-black font-mono text-white mb-2">
-                {masteredMetrics ? `${masteredMetrics.estimatedLufs} LUFS` : '--'}
+                {serverLoudness ? `${serverLoudness.integratedLufs.toFixed(2)} LUFS` : '--'}
               </div>
               <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
                 <div
                   className="bg-emerald-500 h-full rounded-full transition-all"
                   style={{
-                    width: `${Math.min(100, Math.max(0, ((masteredMetrics?.estimatedLufs || -30) + 30) * 3.3))}%`,
+                    width: `${Math.min(100, Math.max(0, ((serverLoudness?.integratedLufs ?? -30) + 30) * 3.3))}%`,
                   }}
                 />
               </div>
               <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-1">
-                <span>Orig: {originalMetrics?.estimatedLufs || '--'} LUFS</span>
-                <span>Delta: {masteredMetrics && originalMetrics ? `+${(masteredMetrics.estimatedLufs - originalMetrics.estimatedLufs).toFixed(1)} dB` : '--'}</span>
+                <span>Source browser estimate: {originalMetrics?.estimatedLufs ?? '--'} LUFS</span>
+                <span>Target: {settings.targetLufs} LUFS</span>
               </div>
             </div>
 
             {/* True Peak dBFS */}
             <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
               <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-                <span>Sample Peak (dBFS)</span>
+                <span>True Peak (Server)</span>
                 <span className="font-mono text-blue-400">Ceiling: {settings.ceiling} dBFS</span>
               </div>
               <div className="text-2xl font-black font-mono text-white mb-2">
-                {masteredMetrics ? `${masteredMetrics.peakDbfs} dBFS` : '--'}
+                {serverLoudness ? `${serverLoudness.truePeakDbtp.toFixed(2)} dBTP` : '--'}
               </div>
               <div className="flex items-center space-x-1.5 text-xs">
-                {masteredMetrics?.isClipping ? (
+                {(serverLoudness ? serverLoudness.truePeakDbtp > settings.ceiling + 0.1 : masteredMetrics?.isClipping) ? (
                   <span className="flex items-center space-x-1 text-rose-400 font-bold">
                     <AlertTriangle className="w-3.5 h-3.5" />
                     <span>Clipping Detected</span>
@@ -499,7 +510,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
                 ) : (
                   <span className="flex items-center space-x-1 text-emerald-400 font-semibold">
                     <CheckCircle className="w-3.5 h-3.5" />
-                    <span>Clean Headroom Safe</span>
+                    <span>True-peak headroom safe</span>
                   </span>
                 )}
               </div>
@@ -508,14 +519,14 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
             {/* Dynamic Range (DR Score) */}
             <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
               <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-                <span>Dynamic Range Score</span>
+                <span>Loudness Range (Server)</span>
                 <span className="font-mono text-purple-400">Punch & Transients</span>
               </div>
               <div className="text-2xl font-black font-mono text-white mb-2">
-                DR{masteredMetrics?.dynamicRange || 10}
+                {serverLoudness?.loudnessRangeLu !== undefined ? `${serverLoudness.loudnessRangeLu.toFixed(1)} LU` : '--'}
               </div>
               <p className="text-[11px] text-slate-400">
-                Crest Factor: {masteredMetrics?.crestFactor || 8.5} dB (Preserves natural punch)
+                Browser crest estimate: {masteredMetrics?.crestFactor ?? '--'} dB
               </p>
             </div>
 
