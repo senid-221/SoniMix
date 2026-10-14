@@ -322,6 +322,29 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
 
   return (
     <div className="flex-1 bg-slate-950 text-slate-100 flex flex-col overflow-y-auto">
+      <input
+        type="file"
+        ref={masterUploadInputRef}
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          try {
+            const arr = await file.arrayBuffer();
+            const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+            const ctx = new AudioCtxClass();
+            const decoded = await ctx.decodeAudioData(arr);
+            await ctx.close();
+            setInternalBuffer(decoded);
+            if (onLoadAudioFile) onLoadAudioFile(decoded);
+            e.currentTarget.value = '';
+          } catch (err) {
+            console.error('Audio decode error:', err);
+            setAiReport({ style: 'Audio upload failed', lufsAdvice: err instanceof Error ? err.message : 'Could not decode this audio file.', eqSuggestions: [], dynamicsAdvice: 'Choose a supported WAV, MP3, FLAC, AAC, or other browser-decodable audio file.' });
+          }
+        }}
+        accept="audio/*,.wav,.mp3,.flac,.aiff,.aif,.m4a,.aac,.ogg"
+        className="hidden"
+      />
       {/* Studio Header & Target Loudness Bar */}
       <div className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -340,7 +363,15 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center space-x-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => masterUploadInputRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md transition-colors"
+          >
+            <Volume2 className="w-3.5 h-3.5" />
+            <span>{inputBuffer ? 'Replace Track' : 'Upload Track'}</span>
+          </button>
           <button
             onClick={handleAIMasteringRecommendation}
             disabled={!inputBuffer || isProcessing}
@@ -381,28 +412,6 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
 
       {!inputBuffer ? (
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center max-w-lg mx-auto">
-          <input
-            type="file"
-            ref={masterUploadInputRef}
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              try {
-                const arr = await file.arrayBuffer();
-                const AudioCtxClass =
-                  window.AudioContext ||
-                  (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-                const ctx = new AudioCtxClass();
-                const decoded = await ctx.decodeAudioData(arr);
-                setInternalBuffer(decoded);
-                if (onLoadAudioFile) onLoadAudioFile(decoded);
-              } catch (err) {
-                console.error('Audio decode error:', err);
-              }
-            }}
-            accept="audio/*"
-            className="hidden"
-          />
           <div className="w-16 h-16 rounded-2xl bg-indigo-950/60 border border-indigo-800 flex items-center justify-center mb-4">
             <Wand2 className="w-8 h-8 text-indigo-400" />
           </div>
