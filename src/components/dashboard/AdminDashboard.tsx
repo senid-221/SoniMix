@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { AppConfig, AudioPluginConfig, DirectoryUser } from '../../types/dashboard';
 import { saveAppConfig, saveDirectoryUsers, DEFAULT_APP_CONFIG } from '../../utils/appConfigStore';
+import { apiRequest } from '../../utils/apiClient';
 import { SoniMixLogo } from '../common/SoniMixLogo';
 
 interface AdminDashboardProps {
@@ -88,6 +89,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return payload.url as string;
   };
 
+  // Persist the complete config on the server before showing the upload as successful.
+  const persistBrandConfig = async (updated: AppConfig) => {
+    await apiRequest('/api/admin/app-config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated),
+    });
+    setConfig(updated);
+    setAppConfig(updated);
+  };
+
   // Brand assets are stored on the backend, not embedded as large data URLs in settings.
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -97,9 +109,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     try {
       const url = await uploadBrandAsset(file);
       const updated = { ...config, customLogoUrl: url };
-      setConfig(updated);
-      setAppConfig(updated);
-      showFeedback('Logo uploaded and published.');
+      await persistBrandConfig(updated);
+      showFeedback('Logo uploaded and saved permanently.');
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Logo upload failed.');
     } finally {
@@ -123,9 +134,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     try {
       const url = await uploadBrandAsset(file);
       const updated = { ...config, customFaviconUrl: url };
-      setConfig(updated);
-      setAppConfig(updated);
-      showFeedback('Favicon uploaded and published.');
+      await persistBrandConfig(updated);
+      showFeedback('Favicon uploaded and saved permanently.');
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Favicon upload failed.');
     } finally {
@@ -149,9 +159,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     try {
       const url = await uploadBrandAsset(file);
       const updated = { ...config, customIcons: { ...config.customIcons, [targetIconKey]: url } };
-      setConfig(updated);
-      setAppConfig(updated);
-      showFeedback('Custom icon uploaded and published.');
+      await persistBrandConfig(updated);
+      showFeedback('Custom icon uploaded and saved permanently.');
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Icon upload failed.');
     } finally {
