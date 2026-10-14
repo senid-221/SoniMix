@@ -33,14 +33,14 @@ export interface AudioTrack {
 
 export interface MasteringSettings {
   targetLufs: number;        // e.g. -14 (streaming), -9 (club), -11 (CD)
-  ceiling: number;           // e.g. -0.3 dBFS
+  ceiling: number;           // e.g. -1.0 dBTP true-peak ceiling
   inputGain: number;         // -12 to +12 dB
   eqBass: number;            // -6 to +6 dB (80Hz)
   eqLowMid: number;          // -6 to +6 dB (300Hz)
   eqPresence: number;        // -6 to +6 dB (3.5kHz)
   eqAir: number;             // -6 to +6 dB (12kHz)
   stereoWidth: number;       // 0.5 to 2.0 (1.0 = normal, 1.5 = expanded)
-  compressionDrive: number;  // 0 to 1 (multiband glue)
+  compressionDrive: number;  // 0 to 1 (single-band glue compression)
   warmTape: number;          // 0 to 1 (analog saturation)
   presetName: string;
 }
