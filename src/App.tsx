@@ -25,13 +25,44 @@ import {
 import { audioEngine } from './audio/audioEngine';
 
 export default function App() {
-  // Determine initial tab from URL (/admin/login or /admin)
-  const [currentTab, setCurrentTab] = useState<NavTab>(() => {
-    const path = window.location.pathname;
+  // Keep the active workspace aligned with the URL so refresh and browser navigation restore it.
+  const getTabFromLocation = (): NavTab => {
+    const path = window.location.pathname.replace(/\\/+$/, '') || '/';
     const hash = window.location.hash;
-    if (path === '/admin/login' || path === '/admin' || hash === '#/admin/login' || hash === '#/admin') return 'admin-login';
-    return 'landing';
-  });
+    const route = hash.startsWith('#/') ? hash.slice(1).replace(/\\/+$/, '') || '/' : path;
+    const routes: Record<string, NavTab> = {
+      '/': 'landing',
+      '/mixer': 'mixer',
+      '/mastering': 'mastering',
+      '/stems': 'stems',
+      '/cover': 'cover',
+      '/resampler': 'resampler',
+      '/projects': 'projects',
+      '/voice': 'voice',
+      '/music': 'music',
+      '/dashboard': 'user-dashboard',
+      '/admin': 'admin-login',
+      '/admin/login': 'admin-login',
+    };
+    return routes[route] || 'landing';
+  };
+
+  const getPathForTab = (tab: NavTab): string => ({
+    landing: '/',
+    mixer: '/mixer',
+    mastering: '/mastering',
+    stems: '/stems',
+    cover: '/cover',
+    resampler: '/resampler',
+    projects: '/projects',
+    voice: '/voice',
+    music: '/music',
+    'user-dashboard': '/dashboard',
+    'admin-dashboard': '/admin',
+    'admin-login': '/admin',
+  })[tab];
+
+  const [currentTab, setCurrentTab] = useState<NavTab>(() => getTabFromLocation());
 
   const [tracks, setTracks] = useState<AudioTrack[]>([]);
   const [masterMixBuffer, setMasterMixBuffer] = useState<AudioBuffer | null>(null);
@@ -111,14 +142,15 @@ export default function App() {
       .catch(() => setDirectoryUsers([]));
   }, [currentUser]);
 
-  // Listen for browser URL changes (e.g. user types /admin/login or clicks back)
+  // Restore the matching workspace on direct navigation, refresh, and browser Back/Forward.
   useEffect(() => {
     const handleUrlRouting = () => {
-      const path = window.location.pathname;
-      const hash = window.location.hash;
-      if (path === '/admin/login' || path === '/admin' || hash === '#/admin/login' || hash === '#/admin') {
+      const tabFromUrl = getTabFromLocation();
+      if (tabFromUrl === 'admin-login' || window.location.pathname.startsWith('/admin') || window.location.hash.startsWith('#/admin')) {
         setCurrentTab(currentUser?.role === 'admin' ? 'admin-dashboard' : 'admin-login');
+        return;
       }
+      setCurrentTab(tabFromUrl);
     };
 
     window.addEventListener('popstate', handleUrlRouting);
@@ -196,19 +228,18 @@ export default function App() {
   const handleSelectTab = (tab: NavTab) => {
     const protectedTabs: NavTab[] = ['mixer', 'mastering', 'stems', 'cover', 'resampler', 'projects', 'user-dashboard', 'voice', 'music'];
     if (protectedTabs.includes(tab) && !currentUser) { setIsAuthModalOpen(true); return; }
-    if (tab === 'admin-dashboard') {
-      if (currentUser?.role === 'admin') {
-        setCurrentTab('admin-dashboard');
-      } else {
-        setCurrentTab('admin-login');
-      }
+
+    if (tab === 'admin-dashboard' || tab === 'admin-login') {
+      const adminTab = currentUser?.role === 'admin' ? 'admin-dashboard' : 'admin-login';
+      setCurrentTab(adminTab);
       window.history.pushState(null, '', '/admin');
       return;
     }
 
     setCurrentTab(tab);
-    if (window.location.pathname.startsWith('/admin')) {
-      window.history.pushState(null, '', '/');
+    const nextPath = getPathForTab(tab);
+    if (window.location.pathname !== nextPath || window.location.hash) {
+      window.history.pushState(null, '', nextPath);
     }
   };
 
