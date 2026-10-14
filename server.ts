@@ -95,10 +95,18 @@ function requireAdmin(request: AuthenticatedRequest, response: Response, next: N
 
 function getGoogleRedirectUri() {
   const configured = process.env.GOOGLE_REDIRECT_URI?.trim();
-  // Production should use the public Vercel URL; never default to localhost.
-  if (configured) return configured;
-  if (process.env.NODE_ENV !== 'production') return undefined;
-  return undefined;
+  if (!configured) return undefined;
+
+  try {
+    const redirect = new URL(configured);
+    if (redirect.protocol !== 'https:' && process.env.NODE_ENV === 'production') return undefined;
+    if (redirect.hostname === 'localhost' || redirect.hostname === '127.0.0.1') {
+      if (process.env.NODE_ENV === 'production') return undefined;
+    }
+    return redirect.toString();
+  } catch {
+    return undefined;
+  }
 }
 
 function stringValue(value: unknown, name: string) {
