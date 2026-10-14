@@ -4,14 +4,14 @@ SoniMix is a React audio-production workspace with a Node.js API, SQLite persist
 
 ## Local setup
 
-Requirements: Node.js 22 or later, FFmpeg + FFprobe, and (for stem separation) Demucs with the selected model available. Configure provider keys only on the server. Copy `.env.example` to `.env`, set a unique administrator email/password, and run:
+Requirements: Node.js 22 or later and FFmpeg + FFprobe. For four-stem separation, install Python and Demucs in the server runtime; the Node-only Render environment does not include the `demucs` executable by default. Configure provider keys only on the server. Copy `.env.example` to `.env`, set a unique administrator email/password, and run:
 
 ```sh
 pnpm install
 pnpm dev
 ```
 
-The database and files live under `SONIMIX_DATA_DIR` (default `./data`). Do not expose or commit this directory. Configure `FFMPEG_BIN`, `FFPROBE_BIN`, and `DEMUCS_BIN` for deployment as needed. If a required engine or provider credential is missing, that operation returns a real failure rather than fabricated output.
+The database and files live under `SONIMIX_DATA_DIR` (default `./data`). Do not expose or commit this directory. Configure `FFMPEG_BIN`, `FFPROBE_BIN`, and `DEMUCS_BIN` for deployment as needed. The `DEMUCS_BIN` value must point to an installed Demucs executable (for example, the output of `which demucs` after installation). If a required engine or provider credential is missing, that operation returns a real failure rather than fabricated output.
 
 ## Accounts and administration
 
