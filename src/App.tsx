@@ -11,7 +11,6 @@ import { UserDashboard } from './components/dashboard/UserDashboard';
 import { AdminDashboard } from './components/dashboard/AdminDashboard';
 import { AdminLoginPage } from './components/auth/AdminLoginPage';
 import { AuthModal } from './components/auth/AuthModal';
-import { VoiceStudio } from './components/providers/VoiceStudio';
 import { MusicGenerationStudio } from './components/providers/MusicGenerationStudio';
 import { AudioTrack, ExportHistoryItem } from './types/audio';
 import { AppConfig, UserProfile, DirectoryUser } from './types/dashboard';
@@ -417,7 +416,7 @@ export default function App() {
           />
         )}
 
-        {currentTab === 'voice' && <VoiceStudio onSaved={handleAddExport} />}
+        {currentTab === 'voice' && <MusicGenerationStudio onSaved={handleAddExport} />}
         {currentTab === 'music' && <MusicGenerationStudio onSaved={handleAddExport} />}
 
         {currentTab === 'resampler' && (
