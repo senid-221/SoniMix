@@ -45,6 +45,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
   const [originalPeaks, setOriginalPeaks] = useState<number[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [pluginChainBypassed, setPluginChainBypassed] = useState(false);
+  const [masteringMode, setMasteringMode] = useState<'limit' | 'clip'>('limit');
   const [isPlaying, setIsPlaying] = useState(false);
   const [playMode, setPlayMode] = useState<'mastered' | 'original'>('mastered');
   const [currentTime, setCurrentTime] = useState(0);
@@ -91,7 +92,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
         profile,
         bitDepth,
         format: 'wav',
-        dsp: { ...masterSettings, pluginBypass },
+        dsp: { ...masterSettings, pluginBypass, masteringMode },
       });
       const job = await waitForJob<{ id: string; state: string; outputs: string[]; message: string; metadata?: { integratedLufs?: number; truePeakDbtp?: number; loudnessRangeLu?: number } }>(queued.id);
       const response = await fetch(`/api/files/${job.outputs[0].split('/').map(encodeURIComponent).join('/')}`, { credentials: 'include' });
@@ -266,7 +267,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
     setIsExporting(true);
     try {
       const { file } = await uploadAsset(audioBufferToWav(inputBuffer, 24), 'master-source.wav');
-      const queued = await submitJob<{ id: string }>('master_audio', file, { targetLufs: settings.targetLufs, profile: 'balanced', bitDepth, format: 'wav', dsp: { ...settings, pluginBypass: pluginChainBypassed } });
+      const queued = await submitJob<{ id: string }>('master_audio', file, { targetLufs: settings.targetLufs, profile: 'balanced', bitDepth, format: 'wav', dsp: { ...settings, pluginBypass: pluginChainBypassed, masteringMode } });
       const job = await waitForJob<{ id: string; state: string; outputs: string[]; message: string; metadata?: { integratedLufs?: number; truePeakDbtp?: number; loudnessRangeLu?: number } }>(queued.id);
       const response = await fetch(`/api/files/${job.outputs[0].split('/').map(encodeURIComponent).join('/')}`, { credentials: 'include' });
       if (!response.ok) throw new Error('The verified master could not be downloaded.');
@@ -496,7 +497,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
             <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
               <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
                 <span>True Peak (Server)</span>
-                <span className="font-mono text-blue-400">Ceiling: {settings.ceiling} dBFS</span>
+                <span className="font-mono text-blue-400">Ceiling: {settings.ceiling} dBTP</span>
               </div>
               <div className="text-2xl font-black font-mono text-white mb-2">
                 {serverLoudness ? `${serverLoudness.truePeakDbtp.toFixed(2)} dBTP` : '--'}
@@ -507,11 +508,13 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
                     <AlertTriangle className="w-3.5 h-3.5" />
                     <span>Clipping Detected</span>
                   </span>
-                ) : (
+                ) : serverLoudness ? (
                   <span className="flex items-center space-x-1 text-emerald-400 font-semibold">
                     <CheckCircle className="w-3.5 h-3.5" />
                     <span>True-peak headroom safe</span>
                   </span>
+                ) : (
+                  <span className="text-slate-500">Waiting for server measurement…</span>
                 )}
               </div>
             </div>
@@ -620,7 +623,23 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1">Choose a chain, render it, or bypass tone/dynamics effects. Safety limiting and loudness normalization remain active.</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-300">
+                  <span>Peak control</span>
+                  <select
+                    value={masteringMode}
+                    onChange={(event) => {
+                      const nextMode = event.target.value as 'limit' | 'clip';
+                      setMasteringMode(nextMode);
+                      if (inputBuffer) void renderMaster(inputBuffer, settings, pluginChainBypassed);
+                    }}
+                    disabled={isProcessing}
+                    className="bg-slate-800 text-white rounded px-2 py-1 outline-none"
+                  >
+                    <option value="limit">Transparent limiter</option>
+                    <option value="clip">Soft clip + limiter</option>
+                  </select>
+                </label>
                 <button
                   onClick={() => {
                     const nextBypass = !pluginChainBypassed;
