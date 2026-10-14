@@ -277,6 +277,25 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
 
   const activeDuration = inputBuffer?.duration || 0;
 
+  // Stereo correlation is a real sample-based estimate for the loaded master buffer.
+  // Values near +1 indicate a similar in-phase stereo image; values near -1 warn of polarity/mono-compatibility risk.
+  const stereoCorrelation = React.useMemo(() => {
+    if (!masteredBuffer || masteredBuffer.numberOfChannels < 2) return null;
+    const left = masteredBuffer.getChannelData(0);
+    const right = masteredBuffer.getChannelData(1);
+    const stride = Math.max(1, Math.floor(left.length / 100000));
+    let cross = 0;
+    let leftEnergy = 0;
+    let rightEnergy = 0;
+    for (let i = 0; i < Math.min(left.length, right.length); i += stride) {
+      cross += left[i] * right[i];
+      leftEnergy += left[i] * left[i];
+      rightEnergy += right[i] * right[i];
+    }
+    const denominator = Math.sqrt(leftEnergy * rightEnergy);
+    return denominator > 0 ? Math.max(-1, Math.min(1, cross / denominator)) : 0;
+  }, [masteredBuffer]);
+
   return (
     <div className="flex-1 bg-slate-950 text-slate-100 flex flex-col overflow-y-auto">
       {/* Studio Header & Target Loudness Bar */}
@@ -437,11 +456,11 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
           </div>
 
           {/* Loudness & Acoustic Engineering Telemetry Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
             {/* Integrated Loudness */}
             <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
               <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-                <span>Estimated Loudness</span>
+                <span>Browser LUFS Estimate</span>
                 <span className="font-mono text-emerald-400">Target: {settings.targetLufs}</span>
               </div>
               <div className="text-2xl font-black font-mono text-white mb-2">
@@ -464,7 +483,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
             {/* True Peak dBFS */}
             <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
               <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-                <span>Sample Peak</span>
+                <span>Sample Peak (dBFS)</span>
                 <span className="font-mono text-blue-400">Ceiling: {settings.ceiling} dBFS</span>
               </div>
               <div className="text-2xl font-black font-mono text-white mb-2">
@@ -496,6 +515,32 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
               </div>
               <p className="text-[11px] text-slate-400">
                 Crest Factor: {masteredMetrics?.crestFactor || 8.5} dB (Preserves natural punch)
+              </p>
+            </div>
+
+            {/* Stereo correlation meter */}
+            <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
+              <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+                <span>Stereo Correlation</span>
+                <span className="font-mono text-cyan-400">L / R</span>
+              </div>
+              <div className="text-2xl font-black font-mono text-white mb-2">
+                {stereoCorrelation === null ? 'Mono / --' : stereoCorrelation.toFixed(2)}
+              </div>
+              <div className="relative w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                <div className="absolute left-1/2 top-0 h-full w-px bg-white/60" />
+                {stereoCorrelation !== null && (
+                  <div
+                    className={`absolute top-0 h-full rounded-full ${stereoCorrelation < 0 ? 'bg-rose-500' : stereoCorrelation < 0.2 ? 'bg-amber-400' : 'bg-cyan-400'}`}
+                    style={{
+                      left: stereoCorrelation < 0 ? `${(stereoCorrelation + 1) * 50}%` : '50%',
+                      width: `${Math.abs(stereoCorrelation) * 50}%`,
+                    }}
+                  />
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400 mt-2">
+                {stereoCorrelation === null ? 'Stereo source required' : stereoCorrelation < 0 ? 'Warning: possible phase cancellation' : stereoCorrelation < 0.2 ? 'Very wide / check mono compatibility' : 'Positive phase relationship'}
               </p>
             </div>
 
