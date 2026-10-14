@@ -71,27 +71,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const iconInputRef = useRef<HTMLInputElement | null>(null);
   const [targetIconKey, setTargetIconKey] = useState<string | null>(null);
 
-  // Logo upload handler (SVG, PNG, JPG, WebP)
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const uploadBrandAsset = async (file: File): Promise<string> => {
+    if (file.size > 5 * 1024 * 1024) throw new Error('Brand images must be 5 MB or smaller.');
+    const response = await fetch('/api/admin/brand-assets', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/octet-stream', 'X-Filename': file.name },
+      body: file,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Brand image upload failed. Make sure you are signed in as an administrator.');
+    return payload.url as string;
+  };
+
+  // Brand assets are stored on the backend, not embedded as large data URLs in settings.
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const validTypes = ['image/svg+xml', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
-    if (!validTypes.includes(file.type)) {
-      alert('Please upload a valid image file (SVG, PNG, JPG, or WebP)');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      const updated = { ...config, customLogoUrl: dataUrl };
+    if (!validTypes.includes(file.type)) { alert('Please upload a valid image file (SVG, PNG, JPG, or WebP).'); return; }
+    try {
+      const url = await uploadBrandAsset(file);
+      const updated = { ...config, customLogoUrl: url };
       setConfig(updated);
       setAppConfig(updated);
-      saveAppConfig(updated);
-      showFeedback('Brand logo uploaded and applied across header, landing page & footer!');
-    };
-    reader.readAsDataURL(file);
+      showFeedback('Logo uploaded and published.');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Logo upload failed.');
+    } finally {
+      e.target.value = '';
+    }
   };
 
   const handleResetLogo = () => {
@@ -102,35 +111,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     showFeedback('Reset logo back to official SoniMix vector brand!');
   };
 
-  // Favicon upload handler (ICO, SVG, PNG, JPG, WebP)
-  const handleFaviconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFaviconUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    const validTypes = [
-      'image/x-icon',
-      'image/vnd.microsoft.icon',
-      'image/svg+xml',
-      'image/png',
-      'image/jpeg',
-      'image/jpg',
-      'image/webp',
-    ];
-    if (!validTypes.includes(file.type) && !file.name.endsWith('.ico')) {
-      alert('Please upload a valid icon file (ICO, SVG, PNG, or JPG)');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      const updated = { ...config, customFaviconUrl: dataUrl };
+    const validTypes = ['image/x-icon', 'image/vnd.microsoft.icon', 'image/svg+xml', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+    if (!validTypes.includes(file.type) && !file.name.toLowerCase().endsWith('.ico')) { alert('Please upload a valid favicon (ICO, SVG, PNG, JPG or WebP).'); return; }
+    try {
+      const url = await uploadBrandAsset(file);
+      const updated = { ...config, customFaviconUrl: url };
       setConfig(updated);
       setAppConfig(updated);
-      saveAppConfig(updated);
-      showFeedback('Custom browser favicon uploaded and applied to document head!');
-    };
-    reader.readAsDataURL(file);
+      showFeedback('Favicon uploaded and published.');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Favicon upload failed.');
+    } finally {
+      e.target.value = '';
+    }
   };
 
   const handleResetFavicon = () => {
@@ -141,22 +137,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     showFeedback('Reset favicon back to default SoniMix icon!');
   };
 
-  // Studio tool icon upload handler
-  const handleIconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleIconUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !targetIconKey) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      const updatedIcons = { ...config.customIcons, [targetIconKey]: dataUrl };
-      const updated = { ...config, customIcons: updatedIcons };
+    const validTypes = ['image/svg+xml', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+    if (!validTypes.includes(file.type)) { alert('Please upload a valid icon file (SVG, PNG, JPG or WebP).'); return; }
+    try {
+      const url = await uploadBrandAsset(file);
+      const updated = { ...config, customIcons: { ...config.customIcons, [targetIconKey]: url } };
       setConfig(updated);
       setAppConfig(updated);
-      saveAppConfig(updated);
-      showFeedback(`Custom icon uploaded for ${targetIconKey}!`);
-    };
-    reader.readAsDataURL(file);
+      showFeedback('Custom icon uploaded and published.');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Icon upload failed.');
+    } finally {
+      e.target.value = '';
+    }
   };
 
   const handleResetIcon = (key: string) => {
