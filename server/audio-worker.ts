@@ -71,6 +71,13 @@ export async function separate(job: AudioJob, attach: (child: import('node:child
   const input = requireInput(job);
   const model = process.env.DEMUCS_MODEL || 'htdemucs';
   const demucs = process.env.DEMUCS_BIN || 'demucs';
+  // Demucs is a Python tool and must be installed in the Render runtime.
+  // Fail with a clear setup message instead of an opaque spawn ENOENT.
+  try {
+    await runCommand(demucs, ['--version']);
+  } catch {
+    throw new Error('Stem separation is unavailable: Demucs is not installed on this server. Install Demucs in the Render build environment and set DEMUCS_BIN to its executable path.');
+  }
   const workingDirectory = path.join(OUTPUT_DIR, job.id);
   await runCommand(demucs, ['-n', model, '-o', OUTPUT_DIR, input], attach);
   const base = safeBaseName(path.parse(input).name);
