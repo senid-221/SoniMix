@@ -296,9 +296,8 @@ app.post('/api/admin/brand-assets', requireUser, requireAdmin, async (request: A
     const allowed = ['.svg', '.png', '.jpg', '.jpeg', '.webp', '.ico'];
     if (!allowed.includes(extension)) return response.status(415).json({ error: 'Supported formats: SVG, PNG, JPG, WebP and ICO.' });
     const filename = `${randomUUID()}${extension}`;
-    const directory = resolveDataFile('brand-assets');
-    await mkdir(directory, { recursive: true });
-    await writeFile(path.join(directory, filename), request.body, { flag: 'wx' });
+    const contentTypes: Record<string, string> = { '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon' };
+    db.saveBrandAsset(filename, contentTypes[extension] || 'application/octet-stream', request.body);
     response.status(201).json({ url: `/api/brand-assets/${filename}` });
   } catch (error) {
     response.status(500).json({ error: error instanceof Error ? error.message : 'Brand asset upload failed.' });
@@ -308,13 +307,12 @@ app.post('/api/admin/brand-assets', requireUser, requireAdmin, async (request: A
 app.get('/api/brand-assets/:filename', (request, response) => {
   const filename = String(request.params.filename || '');
   if (!/^[a-f0-9-]{36}\.(svg|png|jpg|jpeg|webp|ico)$/i.test(filename)) return response.status(404).end();
-  const extension = path.extname(filename).toLowerCase();
-  const types: Record<string, string> = { '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon' };
-  response.setHeader('Content-Type', types[extension] || 'application/octet-stream');
+  const asset = db.getBrandAsset(filename);
+  if (!asset) return response.status(404).end();
+  response.setHeader('Content-Type', asset.content_type);
   response.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-  response.sendFile(path.join(resolveDataFile('brand-assets'), filename), (error) => {
-    if (error && !response.headersSent) response.status(404).end();
-  });
+  response.setHeader('X-Content-Type-Options', 'nosniff');
+  response.send(Buffer.from(asset.data));
 });
 
 app.post('/api/uploads', requireUser, async (request: AuthenticatedRequest, response) => {
