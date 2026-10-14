@@ -21,6 +21,10 @@ import {
   Sparkles,
   ExternalLink,
   Laptop,
+  Home,
+  Volume2,
+  Music2,
+  FolderKanban,
 } from 'lucide-react';
 import { AppConfig, AudioPluginConfig, DirectoryUser } from '../../types/dashboard';
 import { saveAppConfig, saveDirectoryUsers, DEFAULT_APP_CONFIG } from '../../utils/appConfigStore';
@@ -205,12 +209,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setTimeout(() => setSaveFeedback(null), 3500);
   };
 
+  // Covers every primary header link and production module rendered by Navbar.
+  // Custom images replace familiar Lucide defaults without changing navigation behavior.
   const toolIconList = [
+    { key: 'landing', label: 'Home Navigation Icon', defaultIcon: Home },
     { key: 'mixer', label: 'Mixing Studio Icon', defaultIcon: SlidersHorizontal },
     { key: 'mastering', label: 'AI Mastering Icon', defaultIcon: Wand2 },
+    { key: 'voice', label: 'Voice Studio Icon', defaultIcon: Volume2 },
+    { key: 'music', label: 'Music Generation Icon', defaultIcon: Music2 },
     { key: 'stems', label: 'Stem Splitter Icon', defaultIcon: GitFork },
     { key: 'cover', label: 'Cover Creator Icon', defaultIcon: ImageIcon },
-    { key: 'resampler', label: 'Resampler Icon', defaultIcon: Gauge },
+    { key: 'resampler', label: 'Audio Resampler Icon', defaultIcon: Gauge },
+    { key: 'projects', label: 'My Projects Icon', defaultIcon: FolderKanban },
   ];
 
   return (
@@ -789,7 +799,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 Custom Tool Icons Management
               </h2>
               <p className="text-xs text-slate-400">
-                Upload custom SVG, PNG, or JPG icons for each studio tool. If no custom image is uploaded, official Lucide icons remain active.
+                Customize the icons used by Home, every production module, and the main navigation. If no custom image is uploaded, familiar Lucide icons remain active.
               </p>
             </div>
 
