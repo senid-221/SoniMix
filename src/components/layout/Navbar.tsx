@@ -61,15 +61,19 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const mobileMenuRef = useRef<HTMLDivElement | null>(null);
   const userMenuRef = useRef<HTMLDivElement | null>(null);
 
   // Close menus on outside click
   useEffect(() => {
     const handleDocClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const insideDesktopMenu = Boolean(menuRef.current?.contains(target));
+      const insideMobileMenu = Boolean(mobileMenuRef.current?.contains(target));
+      if (!insideDesktopMenu && !insideMobileMenu) {
         setIsMenuOpen(false);
       }
-      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+      if (userMenuRef.current && !userMenuRef.current.contains(target)) {
         setIsUserMenuOpen(false);
       }
     };
@@ -374,7 +378,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Mobile menu panel: rendered outside the desktop-only nav so the Menu button works on phones. */}
       {isMenuOpen && (
-        <div ref={menuRef} className="md:hidden absolute right-4 top-full mt-2 w-[min(20rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl shadow-black/80 p-2 z-50 space-y-1">
+        <div ref={mobileMenuRef} className="md:hidden absolute right-4 top-full mt-2 w-[min(20rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl shadow-black/80 p-2 z-50 space-y-1">
           <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
             Production Modules & Assets
           </div>
