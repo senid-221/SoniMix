@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Download, LoaderCircle, Music2, RefreshCw, Sparkles } from 'lucide-react';
-import { apiRequest, submitJob, waitForJob } from '../../utils/apiClient';
+import { ApiError, apiRequest, submitJob, waitForJob } from '../../utils/apiClient';
 
 interface ProviderStatus { available: boolean; reason?: string }
 interface MusicJob { id: string; state: string; outputs: string[]; error?: string; message?: string }
-interface MusicGenerationStudioProps { onSaved: (title: string, blob: Blob, format: string) => void | Promise<void> }
+interface MusicGenerationStudioProps {
+  onSaved: (title: string, blob: Blob, format: string) => void | Promise<void>;
+  onAuthRequired: () => void;
+}
 
-export function MusicGenerationStudio({ onSaved }: MusicGenerationStudioProps) {
+export function MusicGenerationStudio({ onSaved, onAuthRequired }: MusicGenerationStudioProps) {
   const [provider, setProvider] = useState<'musicgpt' | 'acedata_suno'>('acedata_suno');
   const [statuses, setStatuses] = useState<Record<string, ProviderStatus>>({});
   const status = statuses[provider];
@@ -25,7 +28,14 @@ export function MusicGenerationStudio({ onSaved }: MusicGenerationStudioProps) {
       const [musicgpt, suno] = await Promise.all([apiRequest<ProviderStatus>('/api/providers/musicgpt'), apiRequest<ProviderStatus>('/api/providers/suno')]);
       setStatuses({ musicgpt: { ...musicgpt, reason: musicgpt.reason || 'MusicGPT is ready.' }, acedata_suno: { ...suno, reason: suno.reason || 'Suno via Ace Data Cloud is ready.' } });
       setError('');
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Provider status could not be checked.'); }
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.status === 401) {
+        setError('Your sign-in session has expired. Sign in again to continue.');
+        onAuthRequired();
+        return;
+      }
+      setError(reason instanceof Error ? reason.message : 'Provider status could not be checked.');
+    }
   };
   useEffect(() => { void refresh(); }, []);
   useEffect(() => () => tracks.forEach((track) => URL.revokeObjectURL(track.url)), [tracks]);
@@ -39,6 +49,7 @@ export function MusicGenerationStudio({ onSaved }: MusicGenerationStudioProps) {
       const generated: Array<{ url: string; title: string }> = [];
       for (const [index, path] of result.outputs.entries()) {
         const response = await fetch(`/api/files/${path.split('/').map(encodeURIComponent).join('/')}`, { credentials: 'include' });
+        if (response.status === 401) throw new ApiError('Your sign-in session has expired. Sign in again to continue.', 401);
         if (!response.ok) throw new Error('A generated track could not be retrieved.');
         const blob = await response.blob();
         const trackTitle = `${title.trim() || 'SoniMix_Generated'}_${index + 1}.mp3`;
@@ -46,8 +57,14 @@ export function MusicGenerationStudio({ onSaved }: MusicGenerationStudioProps) {
         generated.push({ url: URL.createObjectURL(blob), title: trackTitle });
       }
       setTracks(generated);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Music generation failed.'); }
-    finally { setBusy(false); }
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.status === 401) {
+        setError('Your sign-in session has expired. Sign in again, then select Generate music again.');
+        onAuthRequired();
+      } else {
+        setError(reason instanceof Error ? reason.message : 'Music generation failed.');
+      }
+    } finally { setBusy(false); }
   };
 
   const fieldClass = 'min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-slate-900';
@@ -56,7 +73,7 @@ export function MusicGenerationStudio({ onSaved }: MusicGenerationStudioProps) {
       <div className="mb-8 flex items-center gap-3"><span className="grid size-12 place-items-center rounded-2xl bg-blue-50 text-blue-700"><Music2 /></span><div><p className="text-xs font-bold uppercase tracking-widest text-blue-700">Real provider generation</p><h1 className="text-2xl font-bold">Music Generator</h1></div></div>
       <label className="mb-2 block text-sm font-semibold" htmlFor="music-provider">Music provider</label>
       <select id="music-provider" className={`${fieldClass} mb-5`} value={provider} onChange={(event) => { const nextProvider = event.target.value as 'musicgpt' | 'acedata_suno'; setProvider(nextProvider); setModel(nextProvider === 'acedata_suno' ? 'chirp-v6' : 'v7'); }}><option value="acedata_suno">Suno · Ace Data Cloud</option><option value="musicgpt">MusicGPT</option></select>
-      <div className={`mb-6 rounded-xl border p-4 text-sm ${status?.available ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-950'}`} role="status">{status?.available ? `${provider === 'acedata_suno' ? 'Suno via Ace Data Cloud' : 'MusicGPT'} is configured. Returned audio is downloaded and validated before completion.` : status?.reason || 'Checking provider configuration…'} <button onClick={() => void refresh()} className="ml-2 inline-flex items-center gap-1 font-semibold underline"><RefreshCw size={14} /> Refresh</button></div>
+      <div className={`mb-6 rounded-xl border p-4 text-sm ${status?.available ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-950'}`} role="status">{status?.available ? `${provider === 'acedata_suno' ? 'Suno via Ace Data Cloud' : 'MusicGPT'} is ready for production. Generated audio is downloaded and validated before delivery.` : status?.reason || 'Checking provider configuration…'} <button onClick={() => void refresh()} className="ml-2 inline-flex items-center gap-1 font-semibold underline"><RefreshCw size={14} /> Refresh</button></div>
       <label className="mb-2 block text-sm font-semibold" htmlFor="music-prompt">Describe the music</label>
       <textarea id="music-prompt" className="min-h-32 w-full rounded-xl border border-slate-300 p-4" maxLength={2000} placeholder="A cinematic, warm piano piece with gentle strings…" value={prompt} onChange={(event) => setPrompt(event.target.value)} />
       <div className="mt-5 grid gap-5 sm:grid-cols-2">
