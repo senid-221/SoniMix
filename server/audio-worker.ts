@@ -37,7 +37,22 @@ export async function master(job: AudioJob, settings: { profile?: string; target
   const air = setting('eqAir', 0, -6, 6);
   const drive = setting('compressionDrive', 0.25, 0, 1);
   const ceiling = setting('ceiling', -1, -3, -0.1);
-  const filters = [`volume=${gain}dB`, `equalizer=f=80:t=h:width=200:g=${bass}`, `equalizer=f=320:t=q:width=1.2:g=${lowMid}`, `equalizer=f=3500:t=q:width=1.2:g=${presence}`, `equalizer=f=12000:t=h:width=6000:g=${air}`, `acompressor=threshold=${-20 - drive * 8}dB:ratio=${2 + drive * 4}:attack=20:release=150`, tone, `loudnorm=I=${target}:TP=${ceiling}:LRA=11`];
+  const width = setting('stereoWidth', 1, 0.5, 2);
+  const warmTape = setting('warmTape', 0, 0, 1);
+  const sourceMetadata = await inspectAudio(job.input!);
+  const filters = [
+    `volume=${gain}dB`,
+    `equalizer=f=80:t=h:width=200:g=${bass}`,
+    `equalizer=f=320:t=q:width=1.2:g=${lowMid}`,
+    `equalizer=f=3500:t=q:width=1.2:g=${presence}`,
+    `equalizer=f=12000:t=h:width=6000:g=${air}`,
+    `acompressor=threshold=${-20 - drive * 8}dB:ratio=${2 + drive * 4}:attack=20:release=150`,
+  ];
+  // Apply actual stereo-width DSP only to stereo sources; mono sources remain mono.
+  if (sourceMetadata.channels >= 2 && Math.abs(width - 1) > 0.001) filters.push(`extrastereo=m=${width}:c=0`);
+  // A soft-clip saturation stage gives the tape control an audible, bounded effect.
+  if (warmTape > 0.001) filters.push(`asoftclip=type=tanh:threshold=${Math.max(0.55, 1 - warmTape * 0.4)}:output=1`);
+  filters.push(tone, `loudnorm=I=${target}:TP=${ceiling}:LRA=11`);
   const filter = filters.join(',');
   await runCommand(ffmpeg(), ['-y', '-i', input, '-af', filter, ...codec, outputPath], attach);
   return { outputs: [output], metadata: await inspectAudio(output), message: `Mastered ${profile} render verified` };
