@@ -34,6 +34,23 @@ export interface DirectoryUser {
   lastActive: string;
 }
 
+export interface AudioPluginConfig {
+  id: string;
+  name: string;
+  format: 'built-in' | 'VST3' | 'LV2' | 'AU' | 'Other';
+  description: string;
+  enabled: boolean;
+  status: 'configured' | 'installed' | 'unavailable';
+}
+
+export interface AudioEffectConfig {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  amount: number;
+}
+
 export interface AppConfig {
   customLogoUrl: string | null;
   customFaviconUrl: string | null;
@@ -60,4 +77,6 @@ export interface AppConfig {
   freeMasteringQuota: number;
   maintenanceMode: boolean;
   announcementText: string;
+  audioPlugins: AudioPluginConfig[];
+  audioEffects: AudioEffectConfig[];
 }
