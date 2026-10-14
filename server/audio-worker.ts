@@ -12,6 +12,29 @@ function outputRef(job: AudioJob, extension: string) {
   return path.join('outputs', `${job.id}.${extension}`).replace(/\\/g, '/');
 }
 
+async function measureLoudness(file: string) {
+  const reportText = await runCommand(ffmpeg(), [
+    '-hide_banner', '-nostats', '-i', resolveDataFile(file),
+    '-af', 'loudnorm=I=-14:TP=-1:LRA=11:print_format=json',
+    '-f', 'null', '-',
+  ], undefined, true);
+  const blocks = [...reportText.matchAll(/\{[\s\S]*?\}/g)];
+  const block = blocks[blocks.length - 1]?.[0];
+  if (!block) throw new Error('FFmpeg completed but did not return a loudness measurement report.');
+  const report = JSON.parse(block) as Record<string, string>;
+  const parse = (key: string) => {
+    const value = Number(report[key]);
+    return Number.isFinite(value) ? Number(value.toFixed(2)) : undefined;
+  };
+  const integratedLufs = parse('input_i');
+  const truePeakDbtp = parse('input_tp');
+  const loudnessRangeLu = parse('input_lra');
+  if (integratedLufs === undefined || truePeakDbtp === undefined) {
+    throw new Error('The server could not measure integrated loudness and true peak for this audio.');
+  }
+  return { integratedLufs, truePeakDbtp, loudnessRangeLu, loudnessMeasuredAt: new Date().toISOString() };
+}
+
 export async function analyze(job: AudioJob) {
   if (!job.input) throw new Error('An input audio file is required');
   return { outputs: [], metadata: await inspectAudio(job.input), message: 'Audio analysis verified' };
@@ -55,14 +78,21 @@ export async function master(job: AudioJob, settings: { profile?: string; target
   // A soft-clip saturation stage gives the tape control an audible, bounded effect.
   if (!pluginBypass && warmTape > 0.001) filters.push(`asoftclip=type=tanh:threshold=${Math.max(0.55, 1 - warmTape * 0.4)}:output=1`);
   if (!pluginBypass && masteringMode === 'clip') filters.push('asoftclip=type=atan:threshold=0.92:output=1:oversample=4');
+  // Apply the tone profile before final peak control so later EQ cannot undo the limiter.
+  if (!pluginBypass && tone !== 'anull') filters.push(tone);
   // Keep output safety and EBU R128 loudness normalization active even when tone/dynamics DSP is bypassed.
   const limiterThreshold = Math.pow(10, ceiling / 20);
   filters.push(`alimiter=limit=${limiterThreshold.toFixed(6)}:attack=5:release=50:level=false:latency=true`);
-  if (pluginBypass) filters.push(`loudnorm=I=${target}:TP=${ceiling}:LRA=11`);
-  else filters.push(tone, `loudnorm=I=${target}:TP=${ceiling}:LRA=11`);
+  filters.push(`loudnorm=I=${target}:TP=${ceiling}:LRA=11`);
   const filter = filters.join(',');
   await runCommand(ffmpeg(), ['-y', '-i', input, '-af', filter, ...codec, outputPath], attach);
-  return { outputs: [output], metadata: await inspectAudio(output), message: `Mastered ${profile} render verified` };
+  const metadata = await inspectAudio(output);
+  const loudness = await measureLoudness(output);
+  return {
+    outputs: [output],
+    metadata: { ...metadata, ...loudness },
+    message: `Mastered ${profile} render verified; server measured loudness and true peak after export.`,
+  };
 }
 
 export async function resample(job: AudioJob, settings: { sampleRate: number; format?: 'wav' | 'mp3'; bitDepth?: 16 | 24; speed?: number; pitchSemitones?: number; normalize?: boolean }, attach: (child: import('node:child_process').ChildProcess) => void) {
