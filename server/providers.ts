@@ -3,7 +3,16 @@ import path from 'node:path';
 import { AudioJob, inspectAudio, OUTPUT_DIR, resolveDataFile } from './lib.js';
 
 async function providerFetch(url: string, init: RequestInit) {
-  const response = await fetch(url, { ...init, signal: AbortSignal.timeout(60_000) });
+  let response: Response;
+  try {
+    response = await fetch(url, { ...init, signal: AbortSignal.timeout(120_000) });
+  } catch (error) {
+    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+      const host = new URL(url).hostname;
+      throw new Error(`Music provider ${host} did not respond within 120 seconds. The request may still be processing; wait a moment and retry. If this repeats, check the provider API status and Render logs.`);
+    }
+    throw error;
+  }
   if (!response.ok) throw new Error(`Provider returned ${response.status}: ${(await response.text()).slice(0, 500)}`);
   return response;
 }
