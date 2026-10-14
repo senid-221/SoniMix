@@ -61,6 +61,8 @@ export function MusicGenerationStudio({ onSaved, onAuthRequired }: MusicGenerati
       if (reason instanceof ApiError && reason.status === 401) {
         setError('Your sign-in session has expired. Sign in again, then select Generate music again.');
         onAuthRequired();
+      } else if (reason instanceof Error && (reason.name === 'TimeoutError' || reason.name === 'AbortError' || /operation was aborted due to timeout/i.test(reason.message))) {
+        setError('The music provider timed out before replying. Your request may not have completed. Please wait briefly, refresh provider status, and retry. If this keeps happening, check the provider API key/credits and the Render service logs.');
       } else {
         setError(reason instanceof Error ? reason.message : 'Music generation failed.');
       }
