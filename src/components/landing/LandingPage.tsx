@@ -58,7 +58,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               {appConfig?.customLogoUrl ? (
                 <img
                   src={appConfig.customLogoUrl}
-                  alt="Custom SoniMix Logo"
+                  alt="SoniMix Logo"
+                  onError={(event) => {
+                    event.currentTarget.onerror = null;
+                    event.currentTarget.src = '/sonimix-logo.svg?v=20261014';
+                  }}
                   className="max-h-16 max-w-[200px] object-contain"
                 />
               ) : (
