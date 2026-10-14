@@ -260,9 +260,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* Main Admin Workspace */}
       <div className="flex-1 p-6 space-y-6 max-w-7xl mx-auto w-full">
         {/* Navigation Tabs */}
-        <div className="flex items-center space-x-2 border-b border-slate-800 pb-3 overflow-x-auto">
+        <div aria-label="Admin sections" className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-4">
           {[
-            { id: 'config', label: 'Settings & Brand Assets', icon: Settings },
+            { id: 'config', label: 'Settings', icon: Settings },
             { id: 'icons', label: 'System Icons', icon: Sliders },
             { id: 'audio', label: 'Audio Plugins & Effects', icon: Wand2 },
             { id: 'services', label: 'API Services', icon: Globe },
