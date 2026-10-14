@@ -12,6 +12,10 @@ export interface AudioMetadata {
   channels: number;
   format: string;
   size: number;
+  integratedLufs?: number;
+  truePeakDbtp?: number;
+  loudnessRangeLu?: number;
+  loudnessMeasuredAt?: string;
 }
 
 export interface AudioJob {
@@ -64,7 +68,7 @@ export async function inspectAudio(file: string): Promise<AudioMetadata> {
   return { duration, sampleRate, channels: stream.channels, format: parsed.format?.format_name || 'unknown', size: fileStat.size };
 }
 
-export function runCommand(command: string, args: string[], onProcess?: (child: ChildProcess) => void): Promise<string> {
+export function runCommand(command: string, args: string[], onProcess?: (child: ChildProcess) => void, includeStderr = false): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { windowsHide: true });
     onProcess?.(child);
@@ -74,7 +78,7 @@ export function runCommand(command: string, args: string[], onProcess?: (child: 
     child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
     child.once('error', (error) => reject(new Error(`${command} is unavailable: ${error.message}`)));
     child.once('close', (code) => {
-      if (code === 0) resolve(stdout);
+      if (code === 0) resolve(includeStderr ? `${stdout}\n${stderr}` : stdout);
       else reject(new Error(`${command} failed (${code}): ${stderr.slice(-1200)}`));
     });
   });
