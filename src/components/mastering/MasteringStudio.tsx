@@ -258,7 +258,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
     setIsExporting(true);
     try {
       const { file } = await uploadAsset(audioBufferToWav(inputBuffer, 24), 'master-source.wav');
-      const queued = await submitJob<{ id: string }>('master_audio', file, { targetLufs: settings.targetLufs, profile: 'balanced', bitDepth, format: 'wav', dsp: settings });
+      const queued = await submitJob<{ id: string }>('master_audio', file, { targetLufs: settings.targetLufs, profile: 'balanced', bitDepth, format: 'wav', dsp: { ...settings, pluginBypass: pluginChainBypassed } });
       const job = await waitForJob<{ id: string; state: string; outputs: string[]; message: string }>(queued.id);
       const response = await fetch(`/api/files/${job.outputs[0].split('/').map(encodeURIComponent).join('/')}`, { credentials: 'include' });
       if (!response.ok) throw new Error('The verified master could not be downloaded.');
