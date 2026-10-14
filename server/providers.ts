@@ -15,6 +15,9 @@ async function providerFetch(url: string, init: RequestInit) {
   }
   if (!response.ok) {
     const body = (await response.text()).slice(0, 500);
+    if (response.status === 403 && /"code"\s*:\s*"used_up"|balance is not sufficient|buy more in Ace Data Cloud/i.test(body)) {
+      throw new Error('Your Ace Data Cloud balance is insufficient for Suno music generation. Add credits at https://platform.acedata.cloud, then try again. This is a billing/balance issue, not a model-selection issue.');
+    }
     if (response.status === 403 && /plan does not include access|FORBIDDEN/i.test(body)) {
       throw new Error('Ace Data Cloud denied this Suno model because your current plan does not include access. In Music Generator, select another model your plan supports; if all models are blocked, check your Ace Data Cloud plan or contact its support. Retrying the same model will not fix plan access.');
     }
