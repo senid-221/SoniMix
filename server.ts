@@ -2,7 +2,7 @@ import express, { NextFunction, Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'node:path';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import dotenv from 'dotenv';
 import { analyze, master, resample, separate } from './server/audio-worker.js';
 import { ensureDirectories, JobQueue, JobType, resolveDataFile, safeBaseName } from './server/lib.js';
@@ -285,6 +285,36 @@ app.patch('/api/admin/users/:id', requireUser, requireAdmin, (request: Authentic
     if (!db.updateUser(request.params.id, change, request.user!.id)) return response.status(404).json({ error: 'Account not found' });
     response.json({ users: db.listUsers() });
   } catch (error) { response.status(400).json({ error: error instanceof Error ? error.message : 'Account could not be updated' }); }
+});
+
+app.post('/api/admin/brand-assets', requireUser, requireAdmin, async (request: AuthenticatedRequest, response) => {
+  try {
+    if (!Buffer.isBuffer(request.body) || request.body.length === 0) return response.status(400).json({ error: 'Choose a non-empty image file.' });
+    if (request.body.length > 5 * 1024 * 1024) return response.status(413).json({ error: 'Brand images must be 5 MB or smaller.' });
+    const rawName = safeBaseName(request.header('x-filename') || 'brand.png');
+    const extension = path.extname(rawName).toLowerCase();
+    const allowed = ['.svg', '.png', '.jpg', '.jpeg', '.webp', '.ico'];
+    if (!allowed.includes(extension)) return response.status(415).json({ error: 'Supported formats: SVG, PNG, JPG, WebP and ICO.' });
+    const filename = `${randomUUID()}${extension}`;
+    const directory = resolveDataFile('brand-assets');
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(directory, filename), request.body, { flag: 'wx' });
+    response.status(201).json({ url: `/api/brand-assets/${filename}` });
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : 'Brand asset upload failed.' });
+  }
+});
+
+app.get('/api/brand-assets/:filename', (request, response) => {
+  const filename = String(request.params.filename || '');
+  if (!/^[a-f0-9-]{36}\\.(svg|png|jpg|jpeg|webp|ico)$/i.test(filename)) return response.status(404).end();
+  const extension = path.extname(filename).toLowerCase();
+  const types: Record<string, string> = { '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon' };
+  response.setHeader('Content-Type', types[extension] || 'application/octet-stream');
+  response.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  response.sendFile(path.join(resolveDataFile('brand-assets'), filename), (error) => {
+    if (error && !response.headersSent) response.status(404).end();
+  });
 });
 
 app.post('/api/uploads', requireUser, async (request: AuthenticatedRequest, response) => {
