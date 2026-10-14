@@ -79,7 +79,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
 
   // Render the preview with the same server-side FFmpeg chain used for the final export.
   // This keeps preview and export effects consistent and makes plugin controls affect real audio.
-  const renderMaster = async (buf: AudioBuffer, masterSettings: MasteringSettings, pluginBypass = pluginChainBypassed) => {
+  const renderMaster = async (buf: AudioBuffer, masterSettings: MasteringSettings, pluginBypass = pluginChainBypassed, peakMode = masteringMode) => {
     setIsProcessing(true);
     setAiReport(null);
     setServerLoudness(null);
@@ -92,7 +92,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
         profile,
         bitDepth,
         format: 'wav',
-        dsp: { ...masterSettings, pluginBypass, masteringMode },
+        dsp: { ...masterSettings, pluginBypass, masteringMode: peakMode },
       });
       const job = await waitForJob<{ id: string; state: string; outputs: string[]; message: string; metadata?: { integratedLufs?: number; truePeakDbtp?: number; loudnessRangeLu?: number } }>(queued.id);
       const response = await fetch(`/api/files/${job.outputs[0].split('/').map(encodeURIComponent).join('/')}`, { credentials: 'include' });
@@ -267,7 +267,9 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
     setIsExporting(true);
     try {
       const { file } = await uploadAsset(audioBufferToWav(inputBuffer, 24), 'master-source.wav');
-      const queued = await submitJob<{ id: string }>('master_audio', file, { targetLufs: settings.targetLufs, profile: 'balanced', bitDepth, format: 'wav', dsp: { ...settings, pluginBypass: pluginChainBypassed, masteringMode } });
+      const exportPreset = settings.presetName.toLowerCase();
+      const exportProfile = exportPreset.includes('warm') || exportPreset.includes('tape') || exportPreset.includes('analog') ? 'warm' : exportPreset.includes('bright') || exportPreset.includes('air') || exportPreset.includes('pusher') ? 'bright' : 'balanced';
+      const queued = await submitJob<{ id: string }>('master_audio', file, { targetLufs: settings.targetLufs, profile: exportProfile, bitDepth, format: 'wav', dsp: { ...settings, pluginBypass: pluginChainBypassed, masteringMode } });
       const job = await waitForJob<{ id: string; state: string; outputs: string[]; message: string; metadata?: { integratedLufs?: number; truePeakDbtp?: number; loudnessRangeLu?: number } }>(queued.id);
       const response = await fetch(`/api/files/${job.outputs[0].split('/').map(encodeURIComponent).join('/')}`, { credentials: 'include' });
       if (!response.ok) throw new Error('The verified master could not be downloaded.');
@@ -631,7 +633,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
                     onChange={(event) => {
                       const nextMode = event.target.value as 'limit' | 'clip';
                       setMasteringMode(nextMode);
-                      if (inputBuffer) void renderMaster(inputBuffer, settings, pluginChainBypassed);
+                      if (inputBuffer) void renderMaster(inputBuffer, settings, pluginChainBypassed, nextMode);
                     }}
                     disabled={isProcessing}
                     className="bg-slate-800 text-white rounded px-2 py-1 outline-none"
