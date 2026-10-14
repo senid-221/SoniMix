@@ -54,7 +54,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         <div className="max-w-5xl mx-auto text-center relative z-10 space-y-6">
           {/* Logo Badge */}
           <div className="flex justify-center mb-2">
-            <div className="p-3 bg-slate-950/80 rounded-2xl border border-blue-500/30 shadow-2xl shadow-blue-500/20 backdrop-blur-md overflow-hidden flex items-center justify-center">
+            <div className="p-3 bg-white rounded-2xl border border-slate-200 shadow-2xl shadow-blue-500/20 overflow-hidden flex items-center justify-center">
               {appConfig?.customLogoUrl ? (
                 <img
                   src={appConfig.customLogoUrl}
