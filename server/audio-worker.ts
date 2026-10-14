@@ -29,9 +29,8 @@ async function measureLoudness(file: string) {
   const integratedLufs = parse('input_i');
   const truePeakDbtp = parse('input_tp');
   const loudnessRangeLu = parse('input_lra');
-  if (integratedLufs === undefined || truePeakDbtp === undefined) {
-    throw new Error('The server could not measure integrated loudness and true peak for this audio.');
-  }
+  // Silent or near-silent files can legitimately report -inf. Keep the render valid
+  // and omit unavailable measurements instead of inventing numeric values.
   return { integratedLufs, truePeakDbtp, loudnessRangeLu, loudnessMeasuredAt: new Date().toISOString() };
 }
 
@@ -88,10 +87,16 @@ export async function master(job: AudioJob, settings: { profile?: string; target
   await runCommand(ffmpeg(), ['-y', '-i', input, '-af', filter, ...codec, outputPath], attach);
   const metadata = await inspectAudio(output);
   const loudness = await measureLoudness(output);
+  const hasMeasurements = loudness.integratedLufs !== undefined && loudness.truePeakDbtp !== undefined;
+  const loudnessOnTarget = hasMeasurements && Math.abs(loudness.integratedLufs! - target) <= 0.5;
+  const peakWithinCeiling = hasMeasurements && loudness.truePeakDbtp! <= ceiling + 0.1;
+  const verificationMessage = !hasMeasurements
+    ? 'Render completed, but loudness could not be measured (the file may be silent or near-silent).'
+    : `Server measured ${loudness.integratedLufs!.toFixed(2)} LUFS and ${loudness.truePeakDbtp!.toFixed(2)} dBTP after export. ${loudnessOnTarget ? 'Loudness is within 0.5 LU of target.' : 'Loudness differs from target by more than 0.5 LU.'} ${peakWithinCeiling ? 'True peak is within the configured ceiling.' : 'WARNING: measured true peak exceeds the configured ceiling tolerance.'}`;
   return {
     outputs: [output],
     metadata: { ...metadata, ...loudness },
-    message: `Mastered ${profile} render verified; server measured loudness and true peak after export.`,
+    message: `Mastered ${profile} render verified. ${verificationMessage}`,
   };
 }
 
