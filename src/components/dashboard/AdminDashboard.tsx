@@ -22,7 +22,7 @@ import {
   ExternalLink,
   Laptop,
 } from 'lucide-react';
-import { AppConfig, DirectoryUser } from '../../types/dashboard';
+import { AppConfig, AudioPluginConfig, DirectoryUser } from '../../types/dashboard';
 import { saveAppConfig, saveDirectoryUsers, DEFAULT_APP_CONFIG } from '../../utils/appConfigStore';
 import { SoniMixLogo } from '../common/SoniMixLogo';
 
@@ -43,7 +43,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   const [config, setConfig] = useState<AppConfig>(appConfig);
   const [users, setUsers] = useState<DirectoryUser[]>(directoryUsers);
-  const [activeTab, setActiveTab] = useState<'config' | 'icons' | 'users'>('config');
+  const [activeTab, setActiveTab] = useState<'config' | 'icons' | 'audio' | 'users'>('config');
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
 
   const logoInputRef = useRef<HTMLInputElement | null>(null);
@@ -237,7 +237,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="flex items-center space-x-2 border-b border-slate-800 pb-3 overflow-x-auto">
           {[
             { id: 'config', label: 'Settings & Brand Assets', icon: Settings },
-            { id: 'icons', label: 'Studio Tool Icons', icon: Sliders },
+            { id: 'icons', label: 'System Icons', icon: Sliders },
+            { id: 'audio', label: 'Audio Plugins & Effects', icon: Wand2 },
             { id: 'users', label: 'User Directory', icon: Users },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -843,7 +844,50 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         )}
 
-        {/* 3. USER DIRECTORY WITH PRIVACY SAFEGUARD */}
+        {/* AUDIO PLUGINS AND EFFECTS */}
+        {activeTab === 'audio' && (
+          <div className="space-y-6">
+            <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6 space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="font-heading text-lg font-bold text-white">Audio Plugin Registry</h2>
+                  <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-400">
+                    Register plugin metadata and control visibility. Registering a plugin does not install or execute it;
+                    VST3, AU and LV2 require a compatible audio engine before processing audio.
+                  </p>
+                </div>
+                <button onClick={() => {
+                  const id = `plugin-${Date.now()}`;
+                  const plugin: AudioPluginConfig = { id, name: 'New Audio Plugin', format: 'Other', description: '', enabled: false, status: 'unavailable' };
+                  setConfig({ ...config, audioPlugins: [...(config.audioPlugins || []), plugin] });
+                }} className="rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400">+ Add Plugin</button>
+              </div>
+              {(config.audioPlugins || []).length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-700 p-6 text-center text-xs text-slate-400">No custom plugins registered. Built-in studio tools continue to work independently.</div>
+              ) : <div className="space-y-3">
+                {(config.audioPlugins || []).map((plugin) => <div key={plugin.id} className="grid grid-cols-1 gap-3 rounded-xl border border-slate-800 bg-slate-950 p-4 md:grid-cols-12">
+                  <div className="md:col-span-3"><label className="mb-1 block text-[11px] text-slate-400">Plugin name</label><input value={plugin.name} onChange={(e) => setConfig({ ...config, audioPlugins: (config.audioPlugins || []).map((item) => item.id === plugin.id ? { ...item, name: e.target.value } : item) })} className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white" /></div>
+                  <div className="md:col-span-2"><label className="mb-1 block text-[11px] text-slate-400">Format</label><select value={plugin.format} onChange={(e) => setConfig({ ...config, audioPlugins: (config.audioPlugins || []).map((item) => item.id === plugin.id ? { ...item, format: e.target.value as AudioPluginConfig['format'] } : item) })} className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-xs text-white">{['built-in', 'VST3', 'LV2', 'AU', 'Other'].map((format) => <option key={format} value={format}>{format}</option>)}</select></div>
+                  <div className="md:col-span-3"><label className="mb-1 block text-[11px] text-slate-400">Description</label><input value={plugin.description} onChange={(e) => setConfig({ ...config, audioPlugins: (config.audioPlugins || []).map((item) => item.id === plugin.id ? { ...item, description: e.target.value } : item) })} className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white" placeholder="Plugin purpose" /></div>
+                  <div className="flex items-center gap-2 md:col-span-3"><label className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={plugin.enabled} onChange={(e) => setConfig({ ...config, audioPlugins: (config.audioPlugins || []).map((item) => item.id === plugin.id ? { ...item, enabled: e.target.checked } : item) })} /> Enabled</label><select aria-label="Plugin runtime status" value={plugin.status} onChange={(e) => setConfig({ ...config, audioPlugins: (config.audioPlugins || []).map((item) => item.id === plugin.id ? { ...item, status: e.target.value as AudioPluginConfig['status'] } : item) })} className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-xs text-white">{['configured', 'installed', 'unavailable'].map((status) => <option key={status} value={status}>{status}</option>)}</select></div>
+                  <div className="md:col-span-1 md:text-right"><button onClick={() => setConfig({ ...config, audioPlugins: (config.audioPlugins || []).filter((item) => item.id !== plugin.id) })} className="rounded-lg border border-rose-900 px-3 py-2 text-xs text-rose-300 hover:bg-rose-950">Remove</button></div>
+                </div>)}
+              </div>}
+            </section>
+            <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6 space-y-4">
+              <div><h2 className="font-heading text-lg font-bold text-white">Audio Effects & Defaults</h2><p className="mt-1 text-xs leading-relaxed text-slate-400">Configure and save the desired effect chain and intensity. These settings are not represented as active audio processing unless a processing workflow consumes them.</p></div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {(config.audioEffects || []).map((effect) => <div key={effect.id} className="rounded-xl border border-slate-800 bg-slate-950 p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-3"><div><h3 className="text-sm font-bold text-white">{effect.name}</h3><p className="mt-1 text-[11px] leading-relaxed text-slate-400">{effect.description}</p></div><label className="flex items-center gap-2 whitespace-nowrap text-xs text-slate-300"><input type="checkbox" checked={effect.enabled} onChange={(e) => setConfig({ ...config, audioEffects: (config.audioEffects || []).map((item) => item.id === effect.id ? { ...item, enabled: e.target.checked } : item) })} /> On</label></div>
+                  <div className="flex items-center gap-3"><label htmlFor={`effect-${effect.id}`} className="text-xs text-slate-400">Amount</label><input id={`effect-${effect.id}`} type="range" min="0" max="100" value={effect.amount} onChange={(e) => setConfig({ ...config, audioEffects: (config.audioEffects || []).map((item) => item.id === effect.id ? { ...item, amount: Number(e.target.value) } : item) })} className="min-w-0 flex-1 accent-amber-500" /><span className="w-10 text-right font-mono text-xs text-amber-400">{effect.amount}%</span></div>
+                </div>)}
+              </div>
+              <div className="flex justify-end border-t border-slate-800 pt-4"><button onClick={handleSaveSettings} className="flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-xs font-bold text-slate-950 hover:bg-amber-400"><Save className="h-4 w-4" /> Save Plugin & Effect Settings</button></div>
+            </section>
+          </div>
+        )}
+
+        {/* 4. USER DIRECTORY WITH PRIVACY SAFEGUARD */
         {activeTab === 'users' && (
           <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6 space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-4">
