@@ -307,7 +307,7 @@ app.post('/api/admin/brand-assets', requireUser, requireAdmin, async (request: A
 
 app.get('/api/brand-assets/:filename', (request, response) => {
   const filename = String(request.params.filename || '');
-  if (!/^[a-f0-9-]{36}\\.(svg|png|jpg|jpeg|webp|ico)$/i.test(filename)) return response.status(404).end();
+  if (!/^[a-f0-9-]{36}\.(svg|png|jpg|jpeg|webp|ico)$/i.test(filename)) return response.status(404).end();
   const extension = path.extname(filename).toLowerCase();
   const types: Record<string, string> = { '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon' };
   response.setHeader('Content-Type', types[extension] || 'application/octet-stream');
