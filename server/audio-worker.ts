@@ -54,6 +54,10 @@ export async function master(job: AudioJob, settings: { profile?: string; target
   // A soft-clip saturation stage gives the tape control an audible, bounded effect.
   if (warmTape > 0.001) filters.push(`asoftclip=type=tanh:threshold=${Math.max(0.55, 1 - warmTape * 0.4)}:output=1`);
   if (masteringMode === 'clip') filters.push('asoftclip=type=atan:threshold=0.92:output=1:oversample=4');
+  // Dedicated look-ahead limiter before EBU R128 loudness normalization.
+  // Convert the user-facing dBFS ceiling to a linear amplitude threshold.
+  const limiterThreshold = Math.pow(10, ceiling / 20);
+  filters.push(`alimiter=limit=${limiterThreshold.toFixed(6)}:attack=5:release=50:level=false:latency=true`);
   filters.push(tone, `loudnorm=I=${target}:TP=${ceiling}:LRA=11`);
   const filter = filters.join(',');
   await runCommand(ffmpeg(), ['-y', '-i', input, '-af', filter, ...codec, outputPath], attach);
