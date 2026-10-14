@@ -28,6 +28,13 @@ interface MasteringStudioProps {
   onLoadAudioFile?: (buffer: AudioBuffer) => void;
 }
 
+function getMasteringProfile(presetName: string): 'warm' | 'bright' | 'balanced' {
+  const preset = presetName.toLowerCase();
+  if (preset.includes('warm') || preset.includes('tape') || preset.includes('analog')) return 'warm';
+  if (preset.includes('bright') || preset.includes('air') || preset.includes('pusher')) return 'bright';
+  return 'balanced';
+}
+
 export const MasteringStudio: React.FC<MasteringStudioProps> = ({
   inputBuffer: propInputBuffer,
   onAddExport,
@@ -85,8 +92,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
     setServerLoudness(null);
     try {
       const { file } = await uploadAsset(audioBufferToWav(buf, 24), 'master-preview.wav');
-      const preset = masterSettings.presetName.toLowerCase();
-      const profile = preset.includes('warm') || preset.includes('tape') ? 'warm' : preset.includes('bright') || preset.includes('air') ? 'bright' : 'balanced';
+      const profile = getMasteringProfile(masterSettings.presetName);
       const queued = await submitJob<{ id: string }>('master_audio', file, {
         targetLufs: masterSettings.targetLufs,
         profile,
@@ -101,6 +107,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
       const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const context = new AudioCtxClass();
       const rendered = await context.decodeAudioData(await renderedBlob.arrayBuffer());
+      await context.close();
       setMasteredBuffer(rendered);
       setMasteredPeaks(computeWaveformPeaks(rendered));
       setMasteredMetrics(analyzeAudioMetrics(rendered));
@@ -237,6 +244,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
     if (!inputBuffer) return;
     setIsProcessing(true);
     setAiReport(null);
+    setServerLoudness(null);
     try {
       const { file } = await uploadAsset(audioBufferToWav(inputBuffer, 24), 'master-source.wav');
       const result = await apiRequest<{ explanation: string | null; jobs: Array<{ id: string }> }>('/api/ai/orchestrate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ instruction: `Analyze and master this uploaded audio file for a balanced streaming release near ${settings.targetLufs} LUFS. Source file reference: ${file}. Use the supported master_audio tool.` }) });
@@ -246,7 +254,9 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
       if (!fileResponse.ok) throw new Error('The verified mastered file could not be retrieved.');
       const masteredBlob = await fileResponse.blob();
       const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      const decoded = await new AudioCtxClass().decodeAudioData(await masteredBlob.arrayBuffer());
+      const audioContext = new AudioCtxClass();
+      const decoded = await audioContext.decodeAudioData(await masteredBlob.arrayBuffer());
+      await audioContext.close();
       setMasteredBuffer(decoded);
       setMasteredPeaks(computeWaveformPeaks(decoded));
       setMasteredMetrics(analyzeAudioMetrics(decoded));
@@ -267,8 +277,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
     setIsExporting(true);
     try {
       const { file } = await uploadAsset(audioBufferToWav(inputBuffer, 24), 'master-source.wav');
-      const exportPreset = settings.presetName.toLowerCase();
-      const exportProfile = exportPreset.includes('warm') || exportPreset.includes('tape') || exportPreset.includes('analog') ? 'warm' : exportPreset.includes('bright') || exportPreset.includes('air') || exportPreset.includes('pusher') ? 'bright' : 'balanced';
+      const exportProfile = getMasteringProfile(settings.presetName);
       const queued = await submitJob<{ id: string }>('master_audio', file, { targetLufs: settings.targetLufs, profile: exportProfile, bitDepth, format: 'wav', dsp: { ...settings, pluginBypass: pluginChainBypassed, masteringMode } });
       const job = await waitForJob<{ id: string; state: string; outputs: string[]; message: string; metadata?: { integratedLufs?: number; truePeakDbtp?: number; loudnessRangeLu?: number } }>(queued.id);
       const response = await fetch(`/api/files/${job.outputs[0].split('/').map(encodeURIComponent).join('/')}`, { credentials: 'include' });
@@ -508,7 +517,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
                 {(serverLoudness ? serverLoudness.truePeakDbtp > settings.ceiling + 0.1 : masteredMetrics?.isClipping) ? (
                   <span className="flex items-center space-x-1 text-rose-400 font-bold">
                     <AlertTriangle className="w-3.5 h-3.5" />
-                    <span>Clipping Detected</span>
+                    <span>True-Peak Ceiling Exceeded</span>
                   </span>
                 ) : serverLoudness ? (
                   <span className="flex items-center space-x-1 text-emerald-400 font-semibold">
