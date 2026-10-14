@@ -43,6 +43,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
   const [masteredPeaks, setMasteredPeaks] = useState<number[]>([]);
   const [originalPeaks, setOriginalPeaks] = useState<number[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [pluginChainBypassed, setPluginChainBypassed] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playMode, setPlayMode] = useState<'mastered' | 'original'>('mastered');
   const [currentTime, setCurrentTime] = useState(0);
@@ -88,7 +89,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
         profile,
         bitDepth,
         format: 'wav',
-        dsp: masterSettings,
+        dsp: { ...masterSettings, pluginBypass: pluginChainBypassed },
       });
       const job = await waitForJob<{ id: string; state: string; outputs: string[]; message: string }>(queued.id);
       const response = await fetch(`/api/files/${job.outputs[0].split('/').map(encodeURIComponent).join('/')}`, { credentials: 'include' });
@@ -606,11 +607,24 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
                   <h3 className="font-bold text-sm text-white">Mastering Plugin Rack</h3>
                   <span className="text-[9px] uppercase tracking-wider rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-emerald-300">Server DSP</span>
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1">Choose an engineering chain, then render preview to hear the changes.</p>
+                <p className="text-[11px] text-slate-400 mt-1">Choose a chain, render it, or bypass tone/dynamics effects. Safety limiting and loudness normalization remain active.</p>
               </div>
-              <button onClick={triggerReMaster} disabled={isProcessing} className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-bold">
-                {isProcessing ? 'Rendering chain…' : 'Render Plugin Chain'}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const nextBypass = !pluginChainBypassed;
+                    setPluginChainBypassed(nextBypass);
+                    if (inputBuffer) void renderMaster(inputBuffer, settings);
+                  }}
+                  disabled={isProcessing}
+                  className={`px-3 py-2 rounded-lg border text-xs font-bold disabled:opacity-50 ${pluginChainBypassed ? 'border-amber-400/50 bg-amber-500/15 text-amber-200' : 'border-slate-700 bg-slate-800 text-slate-300 hover:text-white'}`}
+                >
+                  {pluginChainBypassed ? 'Plugin DSP Bypassed' : 'Bypass Plugin DSP'}
+                </button>
+                <button onClick={triggerReMaster} disabled={isProcessing} className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-bold">
+                  {isProcessing ? 'Rendering chain…' : 'Render Plugin Chain'}
+                </button>
+              </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {[
