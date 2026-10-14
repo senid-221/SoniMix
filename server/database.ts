@@ -68,6 +68,7 @@ export class SoniMixDatabase {
         job_id TEXT, file_size INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
       );
       CREATE TABLE IF NOT EXISTS app_settings (id INTEGER PRIMARY KEY CHECK(id = 1), config TEXT NOT NULL, updated_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS brand_assets (filename TEXT PRIMARY KEY, content_type TEXT NOT NULL, data BLOB NOT NULL, created_at INTEGER NOT NULL);
     `);
     const googleColumns = this.db.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>;
     if (!googleColumns.some((column) => column.name === 'google_sub')) this.db.exec('ALTER TABLE users ADD COLUMN google_sub TEXT');
@@ -221,6 +222,15 @@ export class SoniMixDatabase {
   getAppConfig() {
     const row = this.db.prepare('SELECT config FROM app_settings WHERE id = 1').get() as { config: string } | undefined;
     return row ? JSON.parse(row.config) as Record<string, unknown> : null;
+  }
+
+  saveBrandAsset(filename: string, contentType: string, data: Buffer) {
+    this.db.prepare('INSERT INTO brand_assets (filename, content_type, data, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(filename) DO UPDATE SET content_type = excluded.content_type, data = excluded.data')
+      .run(filename, contentType, data, Date.now());
+  }
+
+  getBrandAsset(filename: string) {
+    return this.db.prepare('SELECT content_type, data FROM brand_assets WHERE filename = ?').get(filename) as { content_type: string; data: Uint8Array } | undefined;
   }
 
   saveAppConfig(config: Record<string, unknown>) {
