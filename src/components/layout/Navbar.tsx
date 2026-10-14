@@ -91,10 +91,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   // All other remaining tools and sections go in the Menu
   const menuItems: { id: NavTab; label: string; description: string; icon: React.ElementType }[] = [
     {
-      id: 'voice', label: 'Voice Studio', description: 'Generate voiceovers with configured ElevenLabs access', icon: Volume2,
+      id: 'voice', label: 'AI Song Generator', description: 'Create complete songs with vocals and instrumentals using a real music API', icon: Music2,
     },
     {
-      id: 'music', label: 'Music Generation', description: 'Loudly API availability and configuration', icon: Music2,
+      id: 'music', label: 'Music Generator', description: 'Generate and download full songs from your text prompt', icon: Music2,
     },
     {
       id: 'stems',
