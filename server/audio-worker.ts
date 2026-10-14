@@ -58,7 +58,8 @@ export async function master(job: AudioJob, settings: { profile?: string; target
   // Keep output safety and EBU R128 loudness normalization active even when tone/dynamics DSP is bypassed.
   const limiterThreshold = Math.pow(10, ceiling / 20);
   filters.push(`alimiter=limit=${limiterThreshold.toFixed(6)}:attack=5:release=50:level=false:latency=true`);
-  filters.push(pluginBypass ? `loudnorm=I=${target}:TP=${ceiling}:LRA=11` : tone, `loudnorm=I=${target}:TP=${ceiling}:LRA=11`);
+  if (pluginBypass) filters.push(`loudnorm=I=${target}:TP=${ceiling}:LRA=11`);
+  else filters.push(tone, `loudnorm=I=${target}:TP=${ceiling}:LRA=11`);
   const filter = filters.join(',');
   await runCommand(ffmpeg(), ['-y', '-i', input, '-af', filter, ...codec, outputPath], attach);
   return { outputs: [output], metadata: await inspectAudio(output), message: `Mastered ${profile} render verified` };
