@@ -24,10 +24,31 @@ export async function elevenLabsVoiceover(job: AudioJob, request: { text: string
 }
 
 export async function listElevenLabsVoices() {
-  const apiKey = process.env.ELEVENLABS_API_KEY;
+  const apiKey = process.env.ELEVENLABS_API_KEY?.trim();
   if (!apiKey) throw new Error('ELEVENLABS_API_KEY is not configured');
-  const response = await providerFetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': apiKey } });
-  return response.json();
+
+  const response = await fetch('https://api.elevenlabs.io/v1/voices', {
+    headers: { 'xi-api-key': apiKey, accept: 'application/json' },
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  if (response.ok) return response.json();
+
+  const body = await response.text();
+  // Listing voices requires the voices_read permission. Keep TTS usable with a
+  // documented quickstart voice ID when the key can synthesize speech but
+  // cannot list voices. The actual TTS endpoint still validates the key and ID.
+  if (response.status === 401 && body.includes('voices_read')) {
+    return {
+      voices: [{ voice_id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George (quickstart voice)' }],
+      warning: 'Your API key cannot list voices (missing voices_read). SoniMix is using the documented quickstart voice ID. If generation also fails, update the key permissions to include text_to_speech.',
+    };
+  }
+
+  if (response.status === 401 || response.status === 403) {
+    throw new Error(`ElevenLabs rejected this API key (${response.status}). Check that the key is current and has voices_read permission. Details: ${body.slice(0, 300)}`);
+  }
+  throw new Error(`ElevenLabs voice listing failed (${response.status}): ${body.slice(0, 300)}`);
 }
 
 export function loudlyStatus() {
