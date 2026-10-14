@@ -13,7 +13,13 @@ async function providerFetch(url: string, init: RequestInit) {
     }
     throw error;
   }
-  if (!response.ok) throw new Error(`Provider returned ${response.status}: ${(await response.text()).slice(0, 500)}`);
+  if (!response.ok) {
+    const body = (await response.text()).slice(0, 500);
+    if (response.status === 403 && /plan does not include access|FORBIDDEN/i.test(body)) {
+      throw new Error('Ace Data Cloud denied this Suno model because your current plan does not include access. In Music Generator, select another model your plan supports; if all models are blocked, check your Ace Data Cloud plan or contact its support. Retrying the same model will not fix plan access.');
+    }
+    throw new Error(`Provider returned ${response.status}: ${body}`);
+  }
   return response;
 }
 
