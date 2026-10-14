@@ -202,7 +202,7 @@ export default function App() {
       } else {
         setCurrentTab('admin-login');
       }
-      window.history.pushState(null, '', '/admin/login');
+      window.history.pushState(null, '', '/admin');
       return;
     }
 
@@ -237,7 +237,7 @@ export default function App() {
     setCurrentUser(payload.user);
     setUserProfile(authUserToProfile(payload.user));
     setCurrentTab('admin-dashboard');
-    window.history.pushState(null, '', '/admin/login');
+    window.history.pushState(null, '', '/admin');
   };
 
   const handleExitAdmin = () => {
