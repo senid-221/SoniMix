@@ -27,9 +27,9 @@ import { audioEngine } from './audio/audioEngine';
 export default function App() {
   // Keep the active workspace aligned with the URL so refresh and browser navigation restore it.
   const getTabFromLocation = (): NavTab => {
-    const path = window.location.pathname.replace(/\\/+$/, '') || '/';
+    const path = window.location.pathname.replace(/\/+$/, '') || '/';
     const hash = window.location.hash;
-    const route = hash.startsWith('#/') ? hash.slice(1).replace(/\\/+$/, '') || '/' : path;
+    const route = hash.startsWith('#/') ? hash.slice(1).replace(/\/+$/, '') || '/' : path;
     const routes: Record<string, NavTab> = {
       '/': 'landing',
       '/mixer': 'mixer',
