@@ -430,7 +430,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {/* Browser Tab Mockup Preview */}
                     <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 min-h-[100px] flex flex-col justify-center mb-4">
                       <div className="flex items-center space-x-2 bg-slate-950 px-3 py-2 rounded-lg border border-slate-800 max-w-sm">
-                        <div className="w-5 h-5 rounded flex items-center justify-center shrink-0 overflow-hidden bg-slate-900 border border-slate-800">
+                        <div className="w-5 h-5 rounded flex items-center justify-center shrink-0 overflow-hidden bg-white border border-slate-200">
                           {config.customFaviconUrl ? (
                             <img
                               src={config.customFaviconUrl}
