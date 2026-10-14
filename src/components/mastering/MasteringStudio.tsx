@@ -77,7 +77,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
 
   // Render the preview with the same server-side FFmpeg chain used for the final export.
   // This keeps preview and export effects consistent and makes plugin controls affect real audio.
-  const renderMaster = async (buf: AudioBuffer, masterSettings: MasteringSettings) => {
+  const renderMaster = async (buf: AudioBuffer, masterSettings: MasteringSettings, pluginBypass = pluginChainBypassed) => {
     setIsProcessing(true);
     setAiReport(null);
     try {
@@ -89,7 +89,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
         profile,
         bitDepth,
         format: 'wav',
-        dsp: { ...masterSettings, pluginBypass: pluginChainBypassed },
+        dsp: { ...masterSettings, pluginBypass },
       });
       const job = await waitForJob<{ id: string; state: string; outputs: string[]; message: string }>(queued.id);
       const response = await fetch(`/api/files/${job.outputs[0].split('/').map(encodeURIComponent).join('/')}`, { credentials: 'include' });
@@ -614,7 +614,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
                   onClick={() => {
                     const nextBypass = !pluginChainBypassed;
                     setPluginChainBypassed(nextBypass);
-                    if (inputBuffer) void renderMaster(inputBuffer, settings);
+                    if (inputBuffer) void renderMaster(inputBuffer, settings, nextBypass);
                   }}
                   disabled={isProcessing}
                   className={`px-3 py-2 rounded-lg border text-xs font-bold disabled:opacity-50 ${pluginChainBypassed ? 'border-amber-400/50 bg-amber-500/15 text-amber-200' : 'border-slate-700 bg-slate-800 text-slate-300 hover:text-white'}`}
