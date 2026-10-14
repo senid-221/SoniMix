@@ -537,7 +537,48 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
-            {/* PART C: EDITABLE PAGE HEADINGS */}
+            {/* PART C: OPERATIONAL SETTINGS */}
+            <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6 space-y-4">
+              <div className="flex items-center space-x-2">
+                <Settings className="w-5 h-5 text-amber-400" />
+                <div>
+                  <h3 className="font-heading font-bold text-base text-white">Platform Operations & Access</h3>
+                  <p className="text-xs text-slate-400 mt-1">Manage upload limits, free mastering allowance, and maintenance mode. Save changes using the button above or below.</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
+                  <label htmlFor="max-upload-size" className="block text-xs font-semibold text-slate-300 mb-2">Maximum audio upload size (MB)</label>
+                  <input id="max-upload-size" type="number" min="1" max="500" step="1"
+                    value={config.maxUploadSizeMb ?? DEFAULT_APP_CONFIG.maxUploadSizeMb}
+                    onChange={(e) => setConfig({ ...config, maxUploadSizeMb: Math.max(1, Math.min(500, Number(e.target.value) || 1)) })}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500" />
+                  <p className="text-[10px] text-slate-500 mt-2">Admin setting is limited to 1–500 MB. The server must enforce the same limit for it to affect uploads.</p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
+                  <label htmlFor="free-mastering-quota" className="block text-xs font-semibold text-slate-300 mb-2">Free mastering jobs per account</label>
+                  <input id="free-mastering-quota" type="number" min="0" max="1000" step="1"
+                    value={config.freeMasteringQuota ?? DEFAULT_APP_CONFIG.freeMasteringQuota}
+                    onChange={(e) => setConfig({ ...config, freeMasteringQuota: Math.max(0, Math.min(1000, Number(e.target.value) || 0)) })}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500" />
+                  <p className="text-[10px] text-slate-500 mt-2">Set to 0 to disable free mastering allowance. Enforcement must be implemented in the server processing workflow.</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-rose-900/60 bg-rose-950/20 p-4">
+                <div>
+                  <h4 className="text-sm font-bold text-white">Maintenance Mode</h4>
+                  <p className="text-xs text-slate-400 mt-1">Toggle the saved maintenance flag. Public access is only blocked if the backend and frontend enforce this flag.</p>
+                </div>
+                <label className="flex items-center gap-3 text-xs font-semibold text-slate-200">
+                  <input type="checkbox" checked={Boolean(config.maintenanceMode)}
+                    onChange={(e) => setConfig({ ...config, maintenanceMode: e.target.checked })}
+                    className="h-4 w-4 accent-rose-500" />
+                  {config.maintenanceMode ? 'Maintenance enabled' : 'Maintenance disabled'}
+                </label>
+              </div>
+            </div>
+
+            {/* PART D: EDITABLE PAGE HEADINGS */}
             <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6 space-y-4">
               <div className="flex items-center space-x-2">
                 <Type className="w-5 h-5 text-amber-400" />
