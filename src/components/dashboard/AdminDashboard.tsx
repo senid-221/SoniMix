@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Shield,
   Upload,
@@ -43,8 +43,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   const [config, setConfig] = useState<AppConfig>(appConfig);
   const [users, setUsers] = useState<DirectoryUser[]>(directoryUsers);
-  const [activeTab, setActiveTab] = useState<'config' | 'icons' | 'audio' | 'users'>('config');
+  const [activeTab, setActiveTab] = useState<'config' | 'icons' | 'audio' | 'services' | 'health' | 'users'>('config');
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const [systemHealth, setSystemHealth] = useState<Record<string, any> | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+
+  const refreshSystemHealth = async () => {
+    setHealthLoading(true);
+    setHealthError(null);
+    try {
+      const response = await fetch('/api/health', { credentials: 'include' });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Health check failed');
+      setSystemHealth(payload);
+    } catch (error) {
+      setHealthError(error instanceof Error ? error.message : 'Health check failed');
+    } finally {
+      setHealthLoading(false);
+    }
+  };
+
+  useEffect(() => { void refreshSystemHealth(); }, []);
 
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const faviconInputRef = useRef<HTMLInputElement | null>(null);
@@ -239,6 +259,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             { id: 'config', label: 'Settings & Brand Assets', icon: Settings },
             { id: 'icons', label: 'System Icons', icon: Sliders },
             { id: 'audio', label: 'Audio Plugins & Effects', icon: Wand2 },
+            { id: 'services', label: 'API Services', icon: Globe },
+            { id: 'health', label: 'System Health', icon: Gauge },
             { id: 'users', label: 'User Directory', icon: Users },
           ].map((tab) => {
             const Icon = tab.icon;
