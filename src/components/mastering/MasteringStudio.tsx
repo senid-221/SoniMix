@@ -552,6 +552,46 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
             </div>
           )}
 
+          {/* Real processing plugin rack: each profile updates DSP values used by server rendering. */}
+          <section className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/60 rounded-2xl border border-indigo-500/30 p-5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-cyan-300" />
+                  <h3 className="font-bold text-sm text-white">Mastering Plugin Rack</h3>
+                  <span className="text-[9px] uppercase tracking-wider rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-emerald-300">Server DSP</span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">Choose an engineering chain, then render preview to hear the changes.</p>
+              </div>
+              <button onClick={triggerReMaster} disabled={isProcessing} className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-bold">
+                {isProcessing ? 'Rendering chain…' : 'Render Plugin Chain'}
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {[
+                { name: 'Analog Console', detail: 'Warm tone, gentle glue and moderate stereo', values: { inputGain: 0, eqBass: 0.8, eqLowMid: -0.5, eqPresence: 0.6, eqAir: 0.8, compressionDrive: 0.42, ceiling: -1, stereoWidth: 1.08, warmTape: 0.28 } },
+                { name: 'Modern Pusher', detail: 'Forward presence, tighter dynamics and extra punch', values: { inputGain: 1, eqBass: 0.5, eqLowMid: -0.8, eqPresence: 1.2, eqAir: 0.7, compressionDrive: 0.68, ceiling: -0.8, stereoWidth: 1.12, warmTape: 0.12 } },
+                { name: 'Clean Streaming', detail: 'Subtle EQ, restrained saturation and safe headroom', values: { inputGain: 0, eqBass: 0, eqLowMid: 0, eqPresence: 0.2, eqAir: 0.3, compressionDrive: 0.25, ceiling: -1.2, stereoWidth: 1, warmTape: 0 } },
+              ].map((plugin) => (
+                <button key={plugin.name} onClick={() => {
+                  const next = { ...settings, ...plugin.values, presetName: plugin.name };
+                  setSettings(next);
+                  if (inputBuffer) void renderMaster(inputBuffer, next);
+                }} disabled={isProcessing} className="text-left rounded-xl border border-slate-700 bg-slate-950/80 hover:border-cyan-400/70 hover:bg-slate-900 p-4 transition-colors disabled:opacity-50">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-sm font-bold text-white">{plugin.name}</span>
+                    <span className="text-[9px] text-cyan-300 uppercase tracking-wider">Load</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-slate-400">{plugin.detail}</p>
+                  <div className="flex gap-1 mt-3">
+                    {[0,1,2,3,4,5].map((bar) => <span key={bar} className="h-1 rounded-full flex-1" style={{ opacity: 0.35 + bar * 0.1, background: plugin.name === 'Modern Pusher' ? '#d946ef' : plugin.name === 'Analog Console' ? '#22d3ee' : '#34d399' }} />)}
+                  </div>
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-slate-500">These are original SoniMix processing profiles inspired by analog console, punch and mastering-chain workflows; they are not copies of the pictured commercial plugins.</p>
+          </section>
+
           {/* Mastering Presets Bar */}
           <div className="bg-slate-900 rounded-2xl border border-slate-800 p-5 space-y-3">
             <span className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
