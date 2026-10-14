@@ -762,8 +762,8 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
 
               <div>
                 <div className="flex justify-between text-xs text-slate-400 mb-1">
-                  <span>Output Peak Ceiling</span>
-                  <span className="font-mono text-slate-200">{settings.ceiling} dBFS</span>
+                  <span>True-Peak Ceiling</span>
+                  <span className="font-mono text-slate-200">{settings.ceiling} dBTP</span>
                 </div>
                 <input
                   type="range"
