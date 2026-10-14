@@ -74,77 +74,45 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
     }
   }, [inputBuffer]);
 
-  // Master processing via OfflineAudioContext
+  // Render the preview with the same server-side FFmpeg chain used for the final export.
+  // This keeps preview and export effects consistent and makes plugin controls affect real audio.
   const renderMaster = async (buf: AudioBuffer, masterSettings: MasteringSettings) => {
     setIsProcessing(true);
+    setAiReport(null);
     try {
-      const sampleRate = buf.sampleRate;
-      const length = buf.length;
-      const offlineCtx = new OfflineAudioContext(2, length, sampleRate);
-
-      const source = offlineCtx.createBufferSource();
-      source.buffer = buf;
-
-      // 1. Input Gain
-      const gainNode = offlineCtx.createGain();
-      const inGainLinear = Math.pow(10, masterSettings.inputGain / 20);
-      gainNode.gain.setValueAtTime(inGainLinear, 0);
-
-      // 2. Linear Phase Style Mastering EQ
-      const eqLow = offlineCtx.createBiquadFilter();
-      eqLow.type = 'lowshelf';
-      eqLow.frequency.setValueAtTime(80, 0);
-      eqLow.gain.setValueAtTime(masterSettings.eqBass, 0);
-
-      const eqLowMid = offlineCtx.createBiquadFilter();
-      eqLowMid.type = 'peaking';
-      eqLowMid.frequency.setValueAtTime(320, 0);
-      eqLowMid.gain.setValueAtTime(masterSettings.eqLowMid, 0);
-
-      const eqPresence = offlineCtx.createBiquadFilter();
-      eqPresence.type = 'peaking';
-      eqPresence.frequency.setValueAtTime(3500, 0);
-      eqPresence.gain.setValueAtTime(masterSettings.eqPresence, 0);
-
-      const eqAir = offlineCtx.createBiquadFilter();
-      eqAir.type = 'highshelf';
-      eqAir.frequency.setValueAtTime(12000, 0);
-      eqAir.gain.setValueAtTime(masterSettings.eqAir, 0);
-
-      // 3. Stereo Imager (Mid-Side matrix simulation)
-      // Done implicitly through stereo EQ or stereo spread
-
-      // 4. Glue Compressor
-      const comp = offlineCtx.createDynamicsCompressor();
-      const drive = masterSettings.compressionDrive;
-      comp.threshold.setValueAtTime(-20 - drive * 10, 0);
-      comp.ratio.setValueAtTime(2.5 + drive * 3, 0);
-      comp.attack.setValueAtTime(0.02, 0);
-      comp.release.setValueAtTime(0.15, 0);
-
-      // 5. True Peak Limiter (Hard ceiling)
-      const ceilingLinear = Math.pow(10, masterSettings.ceiling / 20);
-      const limiter = offlineCtx.createGain();
-      limiter.gain.setValueAtTime(ceilingLinear, 0);
-
-      // Connect DSP graph
-      source.connect(gainNode);
-      gainNode.connect(eqLow);
-      eqLow.connect(eqLowMid);
-      eqLowMid.connect(eqPresence);
-      eqPresence.connect(eqAir);
-      eqAir.connect(comp);
-      comp.connect(limiter);
-      limiter.connect(offlineCtx.destination);
-
-      source.start(0);
-
-      const rendered = await offlineCtx.startRendering();
+      const { file } = await uploadAsset(audioBufferToWav(buf, 24), 'master-preview.wav');
+      const preset = masterSettings.presetName.toLowerCase();
+      const profile = preset.includes('warm') || preset.includes('tape') ? 'warm' : preset.includes('bright') || preset.includes('air') ? 'bright' : 'balanced';
+      const queued = await submitJob<{ id: string }>('master_audio', file, {
+        targetLufs: masterSettings.targetLufs,
+        profile,
+        bitDepth,
+        format: 'wav',
+        dsp: masterSettings,
+      });
+      const job = await waitForJob<{ id: string; state: string; outputs: string[]; message: string }>(queued.id);
+      const response = await fetch(`/api/files/${job.outputs[0].split('/').map(encodeURIComponent).join('/')}`, { credentials: 'include' });
+      if (!response.ok) throw new Error('The server-rendered mastering preview could not be retrieved.');
+      const renderedBlob = await response.blob();
+      const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const context = new AudioCtxClass();
+      const rendered = await context.decodeAudioData(await renderedBlob.arrayBuffer());
       setMasteredBuffer(rendered);
       setMasteredPeaks(computeWaveformPeaks(rendered));
       setMasteredMetrics(analyzeAudioMetrics(rendered));
-    } catch (err) {
-      console.error('Mastering render error:', err);
+      setAiReport({
+        style: 'SoniMix server mastering engine',
+        lufsAdvice: job.message,
+        eqSuggestions: [],
+        dynamicsAdvice: 'Preview processed by the server FFmpeg mastering chain. Loudness and peak cards are client-side estimates; they are not a certified ITU loudness report.',
+      });
+    } catch (error) {
+      setAiReport({
+        style: 'Mastering render failed',
+        lufsAdvice: error instanceof Error ? error.message : 'The server mastering render failed.',
+        eqSuggestions: [],
+        dynamicsAdvice: 'No successful preview is claimed. Check the backend audio engine and try again.',
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -324,7 +292,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Industry-standard release loudness optimization with True Peak limiting and Mid-Side imaging.
+            Server-rendered mastering with EQ, compression, stereo control, saturation and loudness normalization.
           </p>
         </div>
 
@@ -473,7 +441,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
             {/* Integrated Loudness */}
             <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
               <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-                <span>Integrated LUFS</span>
+                <span>Estimated Loudness</span>
                 <span className="font-mono text-emerald-400">Target: {settings.targetLufs}</span>
               </div>
               <div className="text-2xl font-black font-mono text-white mb-2">
@@ -496,7 +464,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
             {/* True Peak dBFS */}
             <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
               <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-                <span>True Peak Ceiling</span>
+                <span>Sample Peak</span>
                 <span className="font-mono text-blue-400">Ceiling: {settings.ceiling} dBFS</span>
               </div>
               <div className="text-2xl font-black font-mono text-white mb-2">
@@ -578,7 +546,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
               </div>
 
               <div className="text-[11px] text-slate-400 pt-1 font-mono">
-                <span className="text-indigo-400 font-bold">Limiting Ceiling: </span>
+                <span className="text-indigo-400 font-bold">Server render: </span>
                 {aiReport.dynamicsAdvice}
               </div>
             </div>
@@ -654,7 +622,7 @@ export const MasteringStudio: React.FC<MasteringStudioProps> = ({
 
               <div>
                 <div className="flex justify-between text-xs text-slate-400 mb-1">
-                  <span>True Peak Limiter Ceiling</span>
+                  <span>Output Peak Ceiling</span>
                   <span className="font-mono text-slate-200">{settings.ceiling} dBFS</span>
                 </div>
                 <input
