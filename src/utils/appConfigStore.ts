@@ -26,6 +26,15 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   freeMasteringQuota: 3,
   maintenanceMode: false,
   announcementText: '',
+  audioPlugins: [],
+  audioEffects: [
+    { id: 'eq', name: 'Equalizer (EQ)', description: 'Tone shaping; requires a compatible processing workflow.', enabled: true, amount: 50 },
+    { id: 'compressor', name: 'Compressor', description: 'Dynamic control; requires a compatible processing workflow.', enabled: true, amount: 35 },
+    { id: 'limiter', name: 'Limiter', description: 'Peak control; requires a compatible processing workflow.', enabled: true, amount: 25 },
+    { id: 'reverb', name: 'Reverb', description: 'Room ambience; requires a compatible processing workflow.', enabled: false, amount: 20 },
+    { id: 'delay', name: 'Delay', description: 'Echo effect; requires a compatible processing workflow.', enabled: false, amount: 20 },
+    { id: 'noise-reduction', name: 'Noise Reduction', description: 'Noise suppression; requires a compatible processing engine.', enabled: false, amount: 40 },
+  ],
 };
 
 export const DEFAULT_USER_PROFILE: UserProfile = {
