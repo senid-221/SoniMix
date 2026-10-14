@@ -243,6 +243,12 @@ export default function App() {
   };
 
   // Auth Handlers
+  const handleMusicAuthRequired = () => {
+    // A stale client profile must not imply that the backend session is still valid.
+    setCurrentUser(null);
+    setIsAuthModalOpen(true);
+  };
+
   const handleLoginSuccess = (user: AuthUser) => {
     setCurrentUser(user);
     const profile = authUserToProfile(user);
@@ -416,8 +422,8 @@ export default function App() {
           />
         )}
 
-        {currentTab === 'voice' && <MusicGenerationStudio onSaved={handleAddExport} />}
-        {currentTab === 'music' && <MusicGenerationStudio onSaved={handleAddExport} />}
+        {currentTab === 'voice' && <MusicGenerationStudio onSaved={handleAddExport} onAuthRequired={handleMusicAuthRequired} />}
+        {currentTab === 'music' && <MusicGenerationStudio onSaved={handleAddExport} onAuthRequired={handleMusicAuthRequired} />}
 
         {currentTab === 'resampler' && (
           <ResamplerStudio
