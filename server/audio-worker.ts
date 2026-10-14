@@ -39,6 +39,7 @@ export async function master(job: AudioJob, settings: { profile?: string; target
   const ceiling = setting('ceiling', -1, -3, -0.1);
   const width = setting('stereoWidth', 1, 0.5, 2);
   const warmTape = setting('warmTape', 0, 0, 1);
+  const masteringMode = dsp.masteringMode === 'clip' ? 'clip' : 'limit';
   const sourceMetadata = await inspectAudio(job.input!);
   const filters = [
     `volume=${gain}dB`,
@@ -52,6 +53,7 @@ export async function master(job: AudioJob, settings: { profile?: string; target
   if (sourceMetadata.channels >= 2 && Math.abs(width - 1) > 0.001) filters.push(`extrastereo=m=${width}:c=0`);
   // A soft-clip saturation stage gives the tape control an audible, bounded effect.
   if (warmTape > 0.001) filters.push(`asoftclip=type=tanh:threshold=${Math.max(0.55, 1 - warmTape * 0.4)}:output=1`);
+  if (masteringMode === 'clip') filters.push('asoftclip=type=atan:threshold=0.92:output=1:oversample=4');
   filters.push(tone, `loudnorm=I=${target}:TP=${ceiling}:LRA=11`);
   const filter = filters.join(',');
   await runCommand(ffmpeg(), ['-y', '-i', input, '-af', filter, ...codec, outputPath], attach);
