@@ -915,7 +915,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         )}
 
-        {/* 4. USER DIRECTORY WITH PRIVACY SAFEGUARD */
+        {/* 4. USER DIRECTORY WITH PRIVACY SAFEGUARD */}
         {activeTab === 'users' && (
           <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6 space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-4">
