@@ -50,6 +50,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [users, setUsers] = useState<DirectoryUser[]>(directoryUsers);
   const [activeTab, setActiveTab] = useState<'config' | 'icons' | 'audio' | 'services' | 'health' | 'users'>('config');
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [systemHealth, setSystemHealth] = useState<Record<string, any> | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
@@ -178,11 +179,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     showFeedback(`Reset icon for ${key} to default!`);
   };
 
-  // Save all Application Settings & Headings
-  const handleSaveSettings = () => {
-    setAppConfig(config);
-    saveAppConfig(config);
-    showFeedback('Application settings, brand assets, and headings saved successfully!');
+  // Save settings to the backend and only confirm publishing after the server accepts them.
+  const handleSaveSettings = async () => {
+    if (isSavingSettings) return;
+    setIsSavingSettings(true);
+    setSaveFeedback(null);
+    try {
+      await apiRequest<{ config: AppConfig }>('/api/admin/app-config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      });
+      setAppConfig(config);
+      saveAppConfig(config);
+      showFeedback('Application settings saved and published successfully.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Settings could not be saved.';
+      setSaveFeedback(`Save failed: ${message}`);
+    } finally {
+      setIsSavingSettings(false);
+    }
   };
 
   // Reset to factory defaults
@@ -331,10 +347,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 <button
                   onClick={handleSaveSettings}
+                  disabled={isSavingSettings}
                   className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 flex items-center space-x-1.5 shadow-md shadow-amber-500/20 transition-all cursor-pointer"
                 >
                   <Save className="w-4 h-4" />
-                  <span>Save All Settings</span>
+                  <span>{isSavingSettings ? 'Saving…' : 'Save All Settings'}</span>
                 </button>
               </div>
             </div>
@@ -832,10 +849,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex justify-end">
               <button
                 onClick={handleSaveSettings}
+                disabled={isSavingSettings}
                 className="px-6 py-2.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 flex items-center space-x-2 shadow-lg shadow-amber-500/20 transition-all cursor-pointer"
               >
                 <Save className="w-4 h-4" />
-                <span>Save and Publish Application Settings</span>
+                <span>{isSavingSettings ? 'Publishing…' : 'Save and Publish Application Settings'}</span>
               </button>
             </div>
           </div>
@@ -960,7 +978,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="flex items-center gap-3"><label htmlFor={`effect-${effect.id}`} className="text-xs text-slate-400">Amount</label><input id={`effect-${effect.id}`} type="range" min="0" max="100" value={effect.amount} onChange={(e) => setConfig({ ...config, audioEffects: (config.audioEffects || []).map((item) => item.id === effect.id ? { ...item, amount: Number(e.target.value) } : item) })} className="min-w-0 flex-1 accent-amber-500" /><span className="w-10 text-right font-mono text-xs text-amber-400">{effect.amount}%</span></div>
                 </div>)}
               </div>
-              <div className="flex justify-end border-t border-slate-800 pt-4"><button onClick={handleSaveSettings} className="flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-xs font-bold text-slate-950 hover:bg-amber-400"><Save className="h-4 w-4" /> Save Plugin & Effect Settings</button></div>
+              <div className="flex justify-end border-t border-slate-800 pt-4"><button onClick={handleSaveSettings} disabled={isSavingSettings} className="flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-xs font-bold text-slate-950 hover:bg-amber-400"><Save className="h-4 w-4" /> Save Plugin & Effect Settings</button></div>
             </section>
           </div>
         )}
