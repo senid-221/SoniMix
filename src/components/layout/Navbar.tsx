@@ -129,7 +129,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={() => onSelectTab('landing')}
             className="flex items-center space-x-3 text-left group cursor-pointer focus:outline-none"
           >
-            <div className="w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center shadow-lg shadow-blue-500/10 group-hover:scale-105 transition-transform p-1 overflow-hidden">
+            <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center shadow-lg shadow-blue-500/10 group-hover:scale-105 transition-transform p-1 overflow-hidden">
               {customLogoUrl ? (
                 <img src={customLogoUrl} alt="Logo" className="w-8 h-8 object-contain" />
               ) : (
