@@ -41,7 +41,8 @@ export async function master(job: AudioJob, settings: { profile?: string; target
   const warmTape = setting('warmTape', 0, 0, 1);
   const masteringMode = dsp.masteringMode === 'clip' ? 'clip' : 'limit';
   const sourceMetadata = await inspectAudio(job.input!);
-  const filters = [
+  const pluginBypass = dsp.pluginBypass === true;
+  const filters = pluginBypass ? ['anull'] : [
     `volume=${gain}dB`,
     `equalizer=f=80:t=h:width=200:g=${bass}`,
     `equalizer=f=320:t=q:width=1.2:g=${lowMid}`,
@@ -50,15 +51,14 @@ export async function master(job: AudioJob, settings: { profile?: string; target
     `acompressor=threshold=${-20 - drive * 8}dB:ratio=${2 + drive * 4}:attack=20:release=150`,
   ];
   // Apply actual stereo-width DSP only to stereo sources; mono sources remain mono.
-  if (sourceMetadata.channels >= 2 && Math.abs(width - 1) > 0.001) filters.push(`extrastereo=m=${width}:c=0`);
+  if (!pluginBypass && sourceMetadata.channels >= 2 && Math.abs(width - 1) > 0.001) filters.push(`extrastereo=m=${width}:c=0`);
   // A soft-clip saturation stage gives the tape control an audible, bounded effect.
-  if (warmTape > 0.001) filters.push(`asoftclip=type=tanh:threshold=${Math.max(0.55, 1 - warmTape * 0.4)}:output=1`);
-  if (masteringMode === 'clip') filters.push('asoftclip=type=atan:threshold=0.92:output=1:oversample=4');
-  // Dedicated look-ahead limiter before EBU R128 loudness normalization.
-  // Convert the user-facing dBFS ceiling to a linear amplitude threshold.
+  if (!pluginBypass && warmTape > 0.001) filters.push(`asoftclip=type=tanh:threshold=${Math.max(0.55, 1 - warmTape * 0.4)}:output=1`);
+  if (!pluginBypass && masteringMode === 'clip') filters.push('asoftclip=type=atan:threshold=0.92:output=1:oversample=4');
+  // Keep output safety and EBU R128 loudness normalization active even when tone/dynamics DSP is bypassed.
   const limiterThreshold = Math.pow(10, ceiling / 20);
   filters.push(`alimiter=limit=${limiterThreshold.toFixed(6)}:attack=5:release=50:level=false:latency=true`);
-  filters.push(tone, `loudnorm=I=${target}:TP=${ceiling}:LRA=11`);
+  filters.push(pluginBypass ? `loudnorm=I=${target}:TP=${ceiling}:LRA=11` : tone, `loudnorm=I=${target}:TP=${ceiling}:LRA=11`);
   const filter = filters.join(',');
   await runCommand(ffmpeg(), ['-y', '-i', input, '-af', filter, ...codec, outputPath], attach);
   return { outputs: [output], metadata: await inspectAudio(output), message: `Mastered ${profile} render verified` };
