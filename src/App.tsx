@@ -87,7 +87,15 @@ export default function App() {
 
   useEffect(() => {
     apiRequest<{ config: AppConfig }>('/api/app-config')
-      .then(({ config }) => setAppConfig({ ...DEFAULT_APP_CONFIG, ...config }))
+      .then(({ config }) => setAppConfig({
+        ...DEFAULT_APP_CONFIG,
+        ...config,
+        sectionTitles: { ...DEFAULT_APP_CONFIG.sectionTitles, ...(config?.sectionTitles || {}) },
+        studioTitles: { ...DEFAULT_APP_CONFIG.studioTitles, ...(config?.studioTitles || {}) },
+        customIcons: { ...DEFAULT_APP_CONFIG.customIcons, ...(config?.customIcons || {}) },
+        audioPlugins: Array.isArray(config?.audioPlugins) ? config.audioPlugins : DEFAULT_APP_CONFIG.audioPlugins,
+        audioEffects: Array.isArray(config?.audioEffects) ? config.audioEffects : DEFAULT_APP_CONFIG.audioEffects,
+      }))
       .catch(() => undefined);
   }, []);
 
