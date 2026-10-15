@@ -127,14 +127,29 @@ export async function separate(job: AudioJob, attach: (child: import('node:child
   await ensureDirectories();
   const input = requireInput(job);
   const model = process.env.DEMUCS_MODEL || 'htdemucs';
-  const demucs = process.env.DEMUCS_BIN || 'demucs';
-  // Demucs is a Python tool and must be installed in the Render runtime.
-  // Fail with a clear setup message instead of an opaque spawn ENOENT.
-  try {
-    await runCommand(demucs, ['--version']);
-  } catch {
-    throw new Error('Stem separation is unavailable: Demucs is not installed on this server. Install Demucs in the Render build environment and set DEMUCS_BIN to its executable path.');
+  // Render may run from a service root different from the repository root.
+  // Try the configured executable first, then common venv locations before PATH.
+  const candidates = [
+    process.env.DEMUCS_BIN?.trim(),
+    path.resolve(process.cwd(), '.venv/bin/demucs'),
+    '/opt/render/project/src/.venv/bin/demucs',
+    'demucs',
+  ].filter((value): value is string => Boolean(value));
+  let demucs: string | undefined;
+  const failures: string[] = [];
+  for (const candidate of [...new Set(candidates)]) {
+    try {
+      await runCommand(candidate, ['--version']);
+      demucs = candidate;
+      break;
+    } catch (error) {
+      failures.push(`${candidate}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
+  if (!demucs) {
+    throw new Error(`Stem separation could not start Demucs. Checked: ${failures.join(' | ')}. Verify the Render build installed Demucs in this same service and that DEMUCS_BIN points to its executable.`);
+  }
+  console.log(`Stem separation using Demucs executable: ${demucs}`);
   const workingDirectory = path.join(OUTPUT_DIR, job.id);
   await runCommand(demucs, ['-n', model, '-o', OUTPUT_DIR, input], attach);
   const base = safeBaseName(path.parse(input).name);
